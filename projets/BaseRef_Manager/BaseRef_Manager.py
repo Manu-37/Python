@@ -4,8 +4,9 @@ from pathlib import Path
 
 # --- Calcul du chemin racine du projet ---
 projet_racine = Path(__file__).resolve().parent
-if str(projet_racine.parent) not in sys.path:
-    sys.path.insert(0, str(projet_racine.parent))
+python_dir = projet_racine.parent.parent  # remonte deux niveaux jusqu'à DEV/Python
+if str(python_dir) not in sys.path:
+    sys.path.insert(0, str(python_dir))
 
 # --- INITIALISATION des chemins en PREMIER ---
 # On appelle init_chemins() avant tout autre import sysclasses,
@@ -21,7 +22,7 @@ from sysclasses import clsLOG
 from sysclasses import clsDBAManager
 from ui.BaseRef_UICore import BaseRef_UICore
 
-# --- Chemins dérivés (lus via les fonctions, jamais via une copie) ---eeee
+# --- Chemins dérivés (lus via les fonctions, jamais via une copie) ---
 dossier_config = get_app_dir() / "config"
 if not dossier_config.exists():
     os.mkdir(dossier_config)

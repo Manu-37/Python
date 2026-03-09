@@ -14,15 +14,14 @@ def init_chemins(app_dir: Path) -> None:
     """
     global _APP_DIR, _PYTHON_DIR
     _APP_DIR    = app_dir
-    _PYTHON_DIR = app_dir.parent.resolve()
+    _PYTHON_DIR = app_dir.parent.parent.resolve()  # remonte deux niveaux jusqu'à DEV/Python
 
 
 def get_app_dir() -> Path:
-    """Retourne le dossier racine du projet en cours (ex: .../Python/BaseRef_Manager)."""
+    """Retourne le dossier racine du projet en cours (ex: .../Python/projets/BaseRef_Manager)."""
     return _APP_DIR
 
 
 def get_python_dir() -> Path:
-    """Retourne le dossier Python parent (ex: .../Python) — contient les logs, les projets, etc."""
+    """Retourne le dossier Python parent (ex: .../Python) — contient logs, projets, sysclasses, db."""
     return _PYTHON_DIR
-
