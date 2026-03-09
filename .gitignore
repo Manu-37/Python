@@ -1,0 +1,26 @@
+# Python - bytecode généré automatiquement, inutile à versionner
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Fichiers de configuration sensibles
+*.ini
+
+# Les logs ils sont inutiles à versionner inutiles
+*.log
+
+# Environnements virtuels
+venv/
+.venv/
+env/
+
+# VSCode - paramètres locaux
+.vscode/
+
+# Fichiers système Windows
+Thumbs.db
+desktop.ini
+
+# Le projet db_manager qui est probablement abandonné. 
+db_manager/
