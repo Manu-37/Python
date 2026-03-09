@@ -12,31 +12,30 @@ if str(python_dir) not in sys.path:
 # On appelle init_chemins() avant tout autre import sysclasses,
 # garantissant que get_app_dir() / get_python_dir() retournent
 # la bonne valeur pour tous les modules qui les appelleront ensuite.
-from sysclasses.cste_chemins import init_chemins, get_app_dir, get_python_dir
+from sysclasses.cste_chemins import init_chemins, get_app_dir
 init_chemins(projet_racine)
 
-# --- Imports du framework (après init, ordre garanti) ---
-from sysclasses import clsCrypto
-from sysclasses import clsINICommun
-from sysclasses import clsLOG
-from sysclasses import clsDBAManager
-from ui.BaseRef_UICore import BaseRef_UICore
-
-# --- Chemins dérivés (lus via les fonctions, jamais via une copie) ---
+# --- Chemins dérivés ---
 dossier_config = get_app_dir() / "config"
 if not dossier_config.exists():
     os.mkdir(dossier_config)
 
-iniFile     = dossier_config / "BaseRef_Manager.ini"
-dossier_log = get_python_dir() / "logs"
+iniFile = dossier_config / "BaseRef_Manager.ini"
+
+# --- Bootstrap défensif des singletons ---
+from sysclasses.AppBootstrap import AppBootstrap
+bootstrap = AppBootstrap(iniFile)
+# Si on arrive ici, les 4 singletons sont initialisés et fiables.
+# bootstrap.oIni, bootstrap.oLog, bootstrap.oCrypto, bootstrap.oDB
+# sont accessibles ici si main() en a besoin.
+# Partout ailleurs dans le code, les singletons se retrouvent
+# via leur constructeur sans argument : clsLOG(), clsDBAManager(), etc.
+
+# --- Lancement de l'UI ---
+from ui.BaseRef_UICore import BaseRef_UICore
 
 
 def main() -> None:
-    ogIni      = clsINICommun(iniFile)
-    ogLog      = clsLOG(ogIni)
-    ogCrypto   = clsCrypto(ogIni.env_params['path'])
-    ogDBEngine = clsDBAManager(ogIni)
-
     app = BaseRef_UICore()
     app.mainloop()
 
