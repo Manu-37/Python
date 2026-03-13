@@ -24,3 +24,6 @@ desktop.ini
 
 # Le projet db_manager qui est probablement abandonné. 
 db_manager/
+
+#Les fichiers Jupyter
+*.ipynb

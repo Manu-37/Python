@@ -56,3 +56,20 @@ class clsINICommun(clsINI):
         """Récupère tout DB_BASEREF.SECURITY."""
         d = self.get_section("SECURITY")
         return d
+    
+    @property
+    def email_profiles(self) -> dict:
+        """
+        Retourne tous les profils email sous forme de dict de dicts.
+        Toute section dont le nom commence par EMAIL_ est un profil.
+        Ex : [EMAIL_ALERTES] → {'ALERTES': {smtp_server, smtp_port, sender, password, recipient}}
+        """
+        profiles = {}
+        for section in self._config.sections():
+            if section.upper().startswith("EMAIL_"):
+                nom_profil = section[6:].upper()  # supprime le préfixe "EMAIL_"
+                d = self.get_section(section)
+                if 'smtp_port' in d:
+                    d['smtp_port'] = int(d['smtp_port'])
+                profiles[nom_profil] = d
+        return profiles

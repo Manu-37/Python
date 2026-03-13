@@ -5,6 +5,7 @@ from sysclasses.clsINICommun  import clsINICommun
 from sysclasses.clsLOG        import clsLOG
 from sysclasses.clsCrypto     import clsCrypto
 from sysclasses.clsDBAManager import clsDBAManager
+from sysclasses.clsEmailManager import clsEmailManager
 
 
 class AppBootstrap:
@@ -37,6 +38,7 @@ class AppBootstrap:
         self.oLog    = self._init_log()
         self.oCrypto = self._init_crypto()
         self.oDB     = self._init_dba()
+        self.oEmail  = self._init_email()
 
     # --------------------------------------------------
     # Étape 1 — INI
@@ -144,6 +146,26 @@ class AppBootstrap:
                 f"Détail : {e}"
             )
 
+    # --------------------------------------------------
+    # Étape 5 — EmailManager
+    # --------------------------------------------------
+
+    def _init_email(self) -> clsEmailManager:
+        """
+        Cinquième singleton. LOG + Crypto + DBA disponibles.
+        L'erreur la plus probable : section [EMAIL_*] absente ou mal formée.
+        """
+        try:
+            return clsEmailManager(self.oIni)
+        except Exception as e:
+            self.oLog.error(f"AppBootstrap | Échec init EmailManager : {e}")
+            self._erreur_fatale(
+                "Erreur d'initialisation Email",
+                f"Impossible d'initialiser le gestionnaire d'emails.\n\n"
+                f"Détail : {e}\n\n"
+                "Vérifiez les sections [EMAIL_*] dans le fichier .ini."
+            )
+    
     # --------------------------------------------------
     # Dialog d'erreur fatale — fenêtre CTk temporaire
     # --------------------------------------------------

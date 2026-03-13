@@ -11,3 +11,4 @@ from .ui.AutoFormView import AutoFormView
 from .ui.UI_Core import UI_Core
 from .ui.Entity_ListView import Entity_ListView
 from .AppBootstrap import AppBootstrap
+from .clsEmailManager import clsEmailManager
