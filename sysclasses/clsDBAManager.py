@@ -1,8 +1,8 @@
-import os
-from .clsINICommun import clsINICommun
-from .clsLOG import clsLOG
-from .clsCrypto import clsCrypto
-from .clsSQL_Postgre import clsSQL_Postgre
+from .clsINICommun    import clsINICommun
+from .clsINIDBBaseRef import clsINIDBBaseRef
+from .clsLOG          import clsLOG
+from .clsCrypto       import clsCrypto
+from .clsSQL_Postgre  import clsSQL_Postgre
 
 
 class clsDBAManager:
@@ -14,11 +14,6 @@ class clsDBAManager:
     _instance = None
 
     def __new__(cls, config_inst=None):
-        """
-        Pattern Singleton via __new__.
-        - Premier appel avec config_inst : crée et initialise l'instance.
-        - Appels suivants sans argument  : retourne l'instance existante.
-        """
         if cls._instance is None:
             if config_inst is None:
                 raise RuntimeError(
@@ -30,35 +25,28 @@ class clsDBAManager:
         return cls._instance
 
     def __init__(self, config_inst=None):
-        # Garde : si déjà initialisé, on ne fait rien
         if self._initialized:
             return
         self._initialized = True
 
-        self._config      = config_inst
-        self._log         = clsLOG()
+        self._config  = config_inst
+        self._log     = clsLOG()
         self._connections = {}
 
-        # Chargement du catalogue (db_baseref.ini)
-        env = self._config.env_params
-        sys_ini_path = os.path.join(env['path'], "db_baseref.ini")
-
-        if not os.path.exists(sys_ini_path):
-            raise FileNotFoundError(f"Registre introuvable : {sys_ini_path}")
-
-        self._baseref = clsINICommun(sys_ini_path)
+        # Récupération du singleton clsINIDBBaseRef déjà initialisé à l'étape 2
+        self._baseref = clsINIDBBaseRef()
         self._crypto  = clsCrypto()
 
         self._init_registry()
 
     def _init_registry(self):
         """Ouvre la connexion maître vers le catalogue (db_baseref)."""
-        db_p  = self._baseref.db_baseref_params
+        db_p  = self._baseref.db_params
         env_p = self._config.env_params
 
         ssh_p = None
         if env_p.get('ssh_enabled'):
-            ssh_p = self._baseref.db_baseref_ssh_params
+            ssh_p = self._baseref.ssh_params
             ssh_p['enabled'] = True
 
         db_ref = clsSQL_Postgre(self._log)
@@ -69,20 +57,17 @@ class clsDBAManager:
     def get_db(self, symbolique_name: str):
         """
         Retourne une connexion active.
-        - '__REGISTRY__' : toujours depuis le cache, jamais résolu dynamiquement.
+        - '__REGISTRY__' : toujours depuis le cache.
         - Autres noms   : résolution via les entités db_baseref si absent du cache.
         """
-
         if symbolique_name == '__REGISTRY__' and symbolique_name not in self._connections:
             raise RuntimeError(
                 "__REGISTRY__ absent du cache — _init_registry() n'a pas été appelé."
             )
 
-        # Cache hit
         if symbolique_name in self._connections:
             return self._connections[symbolique_name]
 
-        # Résolution dynamique pour les autres bases
         from db.db_baseref import clsENV, clsBAS, clsBAS_ENV_NBE
 
         env_type = self._config.env_params.get('TYPE', '')

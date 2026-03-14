@@ -1,13 +1,26 @@
 import configparser
 import os
 
+
 class clsINI:
     """
     Gestionnaire technique universel pour fichiers .ini.
+
+    INSTANCIATION DIRECTE INTERDITE.
+    Hériter de clsINICommun qui elle-même hérite de cette classe.
     """
+
+    def __new__(cls, *args, **kwargs):
+        if cls is clsINI:
+            raise TypeError(
+                "clsINI ne peut pas être instanciée directement.\n"
+                "Utilisez clsINICommun ou une sous-classe projet."
+            )
+        return super().__new__(cls)
+
     def __init__(self, filename: str):
         self._filename = filename
-        self._config = configparser.ConfigParser()
+        self._config   = configparser.ConfigParser()
         if not os.path.exists(self._filename):
             raise FileNotFoundError(f"Fichier introuvable : {self._filename}")
         self._config.read(self._filename, encoding='utf-8')

@@ -1,56 +1,70 @@
 import sys
-import customtkinter as ctk
 
-from sysclasses.clsINICommun  import clsINICommun
-from sysclasses.clsLOG        import clsLOG
-from sysclasses.clsCrypto     import clsCrypto
-from sysclasses.clsDBAManager import clsDBAManager
+from sysclasses.clsINICommun    import clsINICommun
+from sysclasses.clsINIDBBaseRef import clsINIDBBaseRef
+from sysclasses.clsLOG          import clsLOG
+from sysclasses.clsCrypto       import clsCrypto
+from sysclasses.clsDBAManager   import clsDBAManager
 from sysclasses.clsEmailManager import clsEmailManager
 
 
 class AppBootstrap:
     """
-    Initialisation défensive et ordonnée des 4 singletons systématiques.
+    Initialisation défensive et ordonnée des singletons systématiques.
 
     Ordre immuable :
-        1. clsINICommun  — lit le fichier .ini passé en paramètre
-        2. clsLOG        — dépend de clsINICommun (project_params, log_params)
-        3. clsCrypto     — dépend de clsINICommun (env_params['path'])
-        4. clsDBAManager — dépend de tout le reste
+        1. clsINICommun    — fichier ini projet (sous-classe obligatoire)
+        2. clsINIDBBaseRef — fichier db_baseref.ini (données sensibles)
+        3. clsLOG          — dépend de clsINICommun + cste_chemins
+        4. clsCrypto       — dépend de clsINIDBBaseRef
+        5. clsDBAManager   — dépend de clsINICommun + clsINIDBBaseRef
+        6. clsEmailManager — dépend de clsINICommun
 
-    Usage dans main() :
-        bootstrap = AppBootstrap(iniFile)
-        # Si on arrive ici, tout est prêt et fiable.
-        # Les singletons se retrouvent ensuite via leur constructeur sans argument :
-        #   clsLOG()        → instance existante
-        #   clsDBAManager() → instance existante
+    Modes :
+        'ui'      : erreurs fatales via dialog graphique CTk (défaut)
+                    customtkinter n'est importé qu'en mode ui et uniquement
+                    si une erreur fatale survient — pas de dépendance UI
+                    pour les projets console.
+        'console' : erreurs fatales via log critical + arrêt propre
 
-    En cas d'échec à n'importe quelle étape :
-        - LOG disponible  → l'erreur est loggée
-        - Dans tous les cas → dialog graphique CTk + sys.exit(1)
-        L'application ne démarre jamais dans un état partiel.
+    Usage :
+        # Application UI
+        from projets.MonProjet.clsINIMonProjet import clsINIMonProjet
+        bootstrap = AppBootstrap(ini_file, clsINIMonProjet)
+
+        # Script console
+        from projets.MonProjet.clsINIMonProjet import clsINIMonProjet
+        bootstrap = AppBootstrap(ini_file, clsINIMonProjet, mode='console')
+
+    En cas d'échec l'application ne démarre jamais dans un état partiel.
     """
 
-    def __init__(self, ini_file):
-        # Les 4 attributs sont renseignés au fur et à mesure.
-        # Si une étape échoue, on ne revient jamais ici — sys.exit() a déjà été appelé.
-        self.oIni    = self._init_ini(ini_file)
-        self.oLog    = self._init_log()
-        self.oCrypto = self._init_crypto()
-        self.oDB     = self._init_dba()
-        self.oEmail  = self._init_email()
+    def __init__(self, ini_file: str, ini_class: type, mode: str = 'ui'):
+        if ini_class is None:
+            raise TypeError(
+                "AppBootstrap requiert une classe INI projet.\n"
+                "Exemple : AppBootstrap(ini_file, clsINIMonProjet)"
+            )
+        if not issubclass(ini_class, clsINICommun):
+            raise TypeError(
+                f"{ini_class.__name__} n'est pas une sous-classe de clsINICommun."
+            )
+
+        self._mode = mode.lower()
+
+        self.oIni     = self._init_ini(ini_file, ini_class)
+        self.oIniDBBR = self._init_ini_dbbaseref()
+        self.oLog     = self._init_log()
+        self.oCrypto  = self._init_crypto()
+        self.oDB      = self._init_dba()
+        self.oEmail   = self._init_email()
 
     # --------------------------------------------------
-    # Étape 1 — INI
+    # Étape 1 — INI projet
     # --------------------------------------------------
-
-    def _init_ini(self, ini_file) -> clsINICommun:
-        """
-        Premier singleton. Pas de LOG disponible à ce stade.
-        L'erreur la plus probable : fichier .ini introuvable ou mal formé.
-        """
+    def _init_ini(self, ini_file: str, ini_class: type) -> clsINICommun:
         try:
-            return clsINICommun(ini_file)
+            return ini_class(ini_file)
         except FileNotFoundError:
             self._erreur_fatale(
                 "Erreur de configuration",
@@ -65,63 +79,62 @@ class AppBootstrap:
             )
 
     # --------------------------------------------------
-    # Étape 2 — LOG
+    # Étape 2 — INI db_baseref
     # --------------------------------------------------
+    def _init_ini_dbbaseref(self) -> clsINIDBBaseRef:
+        try:
+            from pathlib import Path
+            key_path = self.oIni.env_params.get('path')
+            if not key_path:
+                raise ValueError("La clé 'path' est absente de la section [ENVIRONNEMENT].")
+            return clsINIDBBaseRef(Path(key_path) / 'db_baseref.ini')
+        except FileNotFoundError:
+            self._erreur_fatale(
+                "Erreur de configuration",
+                "Fichier db_baseref.ini introuvable.\n\n"
+                "Vérifiez le paramètre 'path' dans [ENVIRONNEMENT]."
+            )
+        except Exception as e:
+            self._erreur_fatale(
+                "Erreur de configuration",
+                f"Impossible de lire db_baseref.ini.\n\nDétail : {e}"
+            )
 
+    # --------------------------------------------------
+    # Étape 3 — LOG
+    # --------------------------------------------------
     def _init_log(self) -> clsLOG:
-        """
-        Deuxième singleton. Toujours pas de LOG disponible si ça échoue ici.
-        L'erreur la plus probable : section [PROJECT] ou [LOG] absente du .ini,
-        ou dossier log non créable (droits insuffisants).
-        """
         try:
             return clsLOG(self.oIni)
         except KeyError as e:
             self._erreur_fatale(
                 "Erreur de configuration LOG",
                 f"Paramètre manquant dans le fichier .ini :\n\n{e}\n\n"
-                "Vérifiez les sections [PROJECT] et [LOG]."
+                "Vérifiez la section [LOG]."
             )
         except Exception as e:
             self._erreur_fatale(
                 "Erreur d'initialisation LOG",
-                f"Impossible d'initialiser le système de journalisation.\n\n"
-                f"Détail : {e}"
+                f"Impossible d'initialiser le système de journalisation.\n\nDétail : {e}"
             )
 
     # --------------------------------------------------
-    # Étape 3 — Crypto
+    # Étape 4 — Crypto
     # --------------------------------------------------
-
     def _init_crypto(self) -> clsCrypto:
-        """
-        Troisième singleton. LOG disponible à partir d'ici.
-        L'erreur la plus probable : chemin de clé absent ou clé corrompue.
-        """
         try:
-            key_path = self.oIni.env_params.get('path')
-            if not key_path:
-                raise ValueError("La clé 'path' est absente de la section [ENVIRONNEMENT] du fichier .ini.")
-            return clsCrypto(key_path)
+            return clsCrypto()
         except Exception as e:
             self.oLog.error(f"AppBootstrap | Échec init Crypto : {e}")
             self._erreur_fatale(
                 "Erreur de chiffrement",
-                f"Impossible d'initialiser le module de chiffrement.\n\n"
-                f"Détail : {e}\n\n"
-                "Vérifiez le paramètre 'path' dans [ENVIRONNEMENT] et l'accès au fichier de clé."
+                f"Impossible d'initialiser le module de chiffrement.\n\nDétail : {e}"
             )
 
     # --------------------------------------------------
-    # Étape 4 — DBAManager
+    # Étape 5 — DBAManager
     # --------------------------------------------------
-
     def _init_dba(self) -> clsDBAManager:
-        """
-        Quatrième et dernier singleton. LOG + Crypto disponibles.
-        L'erreur la plus probable : base de données inaccessible,
-        tunnel SSH en échec, identifiants incorrects.
-        """
         try:
             return clsDBAManager(self.oIni)
         except FileNotFoundError as e:
@@ -142,54 +155,57 @@ class AppBootstrap:
             self.oLog.error(f"AppBootstrap | Échec init DBAManager : {e}")
             self._erreur_fatale(
                 "Erreur de connexion",
-                f"Impossible d'initialiser le gestionnaire de bases de données.\n\n"
-                f"Détail : {e}"
+                f"Impossible d'initialiser le gestionnaire de bases de données.\n\nDétail : {e}"
             )
 
     # --------------------------------------------------
-    # Étape 5 — EmailManager
+    # Étape 6 — EmailManager
     # --------------------------------------------------
-
     def _init_email(self) -> clsEmailManager:
-        """
-        Cinquième singleton. LOG + Crypto + DBA disponibles.
-        L'erreur la plus probable : section [EMAIL_*] absente ou mal formée.
-        """
         try:
             return clsEmailManager(self.oIni)
         except Exception as e:
             self.oLog.error(f"AppBootstrap | Échec init EmailManager : {e}")
             self._erreur_fatale(
                 "Erreur d'initialisation Email",
-                f"Impossible d'initialiser le gestionnaire d'emails.\n\n"
-                f"Détail : {e}\n\n"
+                f"Impossible d'initialiser le gestionnaire d'emails.\n\nDétail : {e}\n\n"
                 "Vérifiez les sections [EMAIL_*] dans le fichier .ini."
             )
-    
-    # --------------------------------------------------
-    # Dialog d'erreur fatale — fenêtre CTk temporaire
-    # --------------------------------------------------
 
+    # --------------------------------------------------
+    # Erreur fatale — UI ou console selon le mode
+    # --------------------------------------------------
     def _erreur_fatale(self, titre: str, message: str):
+        if self._mode == 'console':
+            self._erreur_fatale_console(titre, message)
+        else:
+            self._erreur_fatale_ui(titre, message)
+
+    def _erreur_fatale_console(self, titre: str, message: str):
         """
-        Affiche une fenêtre d'erreur graphique CTk autonome, puis quitte.
+        Mode console : log critical si LOG disponible, sinon stderr.
+        Lève RuntimeError pour interrompre le bootstrap proprement.
+        """
+        msg_complet = f"{titre} | {message}"
+        if hasattr(self, 'oLog') and self.oLog:
+            self.oLog.critical(f"AppBootstrap | {msg_complet}")
+        else:
+            print(f"\n[ERREUR FATALE] {msg_complet}\n", file=sys.stderr)
+        raise RuntimeError(msg_complet)
 
-        Fonctionnement :
-        - On crée une ctk.CTk() temporaire (fenêtre principale obligatoire pour CTk).
-        - withdraw() la rend invisible — seule la dialog est visible.
-        - CTkToplevel est posée dessus (c'est une fenêtre secondaire, elle a besoin d'un parent).
-        - L'utilisateur clique OK → on détruit tout → sys.exit(1).
-
-        Cette méthode ne retourne jamais — sys.exit() est toujours appelé.
+    def _erreur_fatale_ui(self, titre: str, message: str):
+        """
+        Mode UI : dialog graphique CTk.
+        customtkinter est importé ici uniquement — pas de dépendance UI
+        au niveau du module, les projets console ne le chargent jamais.
         """
         try:
-            # Fenêtre principale CTk invisible — sert uniquement de parent technique
-            root = ctk.CTk()
-            root.withdraw()   # invisible
+            import customtkinter as ctk
 
-            # Centrage : on calcule d'abord, on positionne ensuite
+            root = ctk.CTk()
+            root.withdraw()
+
             dlg_w, dlg_h = 460, 220
-            # winfo_screenwidth/height = dimensions de l'écran physique
             screen_w = root.winfo_screenwidth()
             screen_h = root.winfo_screenheight()
             x = (screen_w - dlg_w) // 2
@@ -199,13 +215,9 @@ class AppBootstrap:
             dlg.title(titre)
             dlg.geometry(f"{dlg_w}x{dlg_h}+{x}+{y}")
             dlg.resizable(False, False)
-
-            # focus_force() : force le focus sur cette fenêtre
-            # (sinon elle peut apparaître derrière d'autres fenêtres)
             dlg.focus_force()
             dlg.lift()
 
-            # Layout interne de la dialog
             dlg.grid_columnconfigure(0, weight=1)
             dlg.grid_rowconfigure(0, weight=1)
 
@@ -214,12 +226,12 @@ class AppBootstrap:
                 text=message,
                 wraplength=420,
                 justify="left",
-                text_color="#CC0000"   # rouge — erreur fatale
+                text_color="#CC0000"
             ).grid(row=0, column=0, padx=20, pady=(20, 10), sticky="nsew")
 
             def _quitter():
                 root.destroy()
-                sys.exit(1)
+                raise SystemExit(1)
 
             ctk.CTkButton(
                 dlg,
@@ -230,18 +242,11 @@ class AppBootstrap:
                 command=_quitter
             ).grid(row=1, column=0, pady=(0, 20))
 
-            # protocol WM_DELETE_WINDOW : clic sur la croix = même effet que Quitter
             dlg.protocol("WM_DELETE_WINDOW", _quitter)
-
             root.mainloop()
 
+        except SystemExit:
+            raise
         except Exception:
-            # Dernier recours : si CTk lui-même plante (rare mais possible),
-            # on affiche dans la console et on quitte quand même.
             print(f"\n[ERREUR FATALE] {titre}\n{message}\n", file=sys.stderr)
-            sys.exit(1)
-
-        # Cette ligne ne sera jamais atteinte — sys.exit() est dans _quitter()
-        # ou dans le bloc except. Elle est là pour que l'analyseur statique
-        # comprenne que la méthode ne retourne pas normalement.
-        sys.exit(1)
+            raise SystemExit(1)

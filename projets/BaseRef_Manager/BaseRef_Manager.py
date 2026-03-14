@@ -8,12 +8,16 @@ python_dir = projet_racine.parent.parent  # remonte deux niveaux jusqu'à DEV/Py
 if str(python_dir) not in sys.path:
     sys.path.insert(0, str(python_dir))
 
+# --- Constantes projet ---
+PROJET_NOM = "BaseRef_Manager"
+PROJET_VER = "0.0.1"
+
 # --- INITIALISATION des chemins en PREMIER ---
 # On appelle init_chemins() avant tout autre import sysclasses,
-# garantissant que get_app_dir() / get_python_dir() retournent
-# la bonne valeur pour tous les modules qui les appelleront ensuite.
+# garantissant que get_app_dir() / get_python_dir() / get_projet_nom() / get_projet_ver()
+# retournent la bonne valeur pour tous les modules qui les appelleront ensuite.
 from sysclasses.cste_chemins import init_chemins, get_app_dir
-init_chemins(projet_racine)
+init_chemins(projet_racine, PROJET_NOM, PROJET_VER)
 
 # --- Chemins dérivés ---
 dossier_config = get_app_dir() / "config"
@@ -24,9 +28,11 @@ iniFile = dossier_config / "BaseRef_Manager.ini"
 
 # --- Bootstrap défensif des singletons ---
 from sysclasses.AppBootstrap import AppBootstrap
-bootstrap = AppBootstrap(iniFile)
-# Si on arrive ici, les 4 singletons sont initialisés et fiables.
-# bootstrap.oIni, bootstrap.oLog, bootstrap.oCrypto, bootstrap.oDB
+from projets.BaseRef_Manager.clsINIBaseRef_Manager import clsINIBaseRef_Manager
+
+bootstrap = AppBootstrap(iniFile, clsINIBaseRef_Manager)
+# Si on arrive ici, les 5 singletons sont initialisés et fiables.
+# bootstrap.oIni, bootstrap.oLog, bootstrap.oCrypto, bootstrap.oDB, bootstrap.oEmail
 # sont accessibles ici si main() en a besoin.
 # Partout ailleurs dans le code, les singletons se retrouvent
 # via leur constructeur sans argument : clsLOG(), clsDBAManager(), etc.
