@@ -1,51 +1,91 @@
 # BaseRef_UICore.py
-from sysclasses.ui.UI_Core import UI_Core
+from sysclasses.ui.UI_Core import UI_Core, MK_SEP, MK_BLANK, MK_BLANK_HEIGHT
 from .views.Environment_ListView import Environment_ListView
 from .views.Base_ListView import Base_ListView
 from .views.Bas_Env_ListView import Bas_Env_ListView
+from .views.Crypto_View import Crypto_View
 import customtkinter as ctk
+
 
 class BaseRef_UICore(UI_Core):
     """
     UI spécifique à BaseRef.
     Définit les tailles de fenêtre par défaut et gère le menu + content_frame.
+
+    Structure du menu (_menu_definition) :
+        Toutes les entrées sont des tuples (marqueur_ou_nom, classe_ou_None).
+        - (nom,     classe) → bouton de navigation
+        - (MK_SEP,  None)   → séparateur horizontal (ligne fine)
+        - (MK_BLANK,None)   → espace blanc (~80% hauteur bouton)
     """
 
     def __init__(self):
-        # Paramètres de fenêtre par défaut pour BaseRef
         super().__init__(width=1024, height=768, min_width=800, min_height=600)
+        self.title("BaseRef Manager")
 
-        self.title("BaseRef Manager")  # Titre explicite pour le projet
+        self._menu_definition = [
+            # --- Groupe db_baseref ---
+            ("Environnements",           Environment_ListView),
+            ("Bases de données",         Base_ListView),
+            ("Paramétrages bases / env", Bas_Env_ListView),
+            (MK_SEP,   None),
+            # --- Groupe Tesla (futur) ---
+            # ("Paramètres Tesla",       Tesla_ListView),
+            (MK_BLANK, None),
+            (MK_SEP,   None),
+            # --- Groupe Utilitaires ---
+            ("Chiffrement",              Crypto_View),
+        ]
 
-        # Dictionnaire des vues disponibles
+        # Dictionnaire nom → classe reconstruit depuis _menu_definition.
+        # On exclut les marqueurs MK_* qui ne correspondent à aucune vue.
         self.views = {
-            "Environnements": Environment_ListView,
-            "Bases de données": Base_ListView,
-            "Paramétrages bases par environnement": Bas_Env_ListView,
-            # Ajouter d'autres entités si nécessaire
+            nom: cls
+            for nom, cls in self._menu_definition
+            if not nom.startswith("MK_")
         }
 
-        # Création des boutons dans le menu gauche
         self._build_menu_buttons()
 
-        # Affichage par défaut
         self.current_view = None
         self.show_view("Environnements")
 
     # -------------------------
-    # Boutons du menu
+    # Construction du menu
     # -------------------------
     def _build_menu_buttons(self):
-        for entity_name in self.views.keys():
-            btn = ctk.CTkButton(
-                self.menu_frame,
-                text=entity_name,
-                command=lambda name=entity_name: self.show_view(name),
-                corner_radius=0,
-                fg_color=self.UIColors.PRIMARY,
-                hover_color=self.UIColors.SECONDARY,
-            )
-            btn.pack(fill="x", padx=5, pady=2)
+        """
+        Parcourt _menu_definition et crée le widget correspondant à chaque entrée.
+        Toutes les entrées sont des tuples (nom, cls) — dépaquetage uniforme garanti.
+            - MK_SEP   → CTkFrame fin (ligne horizontale)
+            - MK_BLANK → CTkFrame transparent (espace vide)
+            - autre    → CTkButton de navigation
+        """
+        for nom, cls in self._menu_definition:
+
+            if nom == MK_SEP:
+                ctk.CTkFrame(
+                    self.menu_frame,
+                    height=2,
+                    fg_color=(self.UIColors.SEPARATOR_LIGHT, self.UIColors.SEPARATOR_DARK)
+                ).pack(fill="x", padx=8, pady=6)
+
+            elif nom == MK_BLANK:
+                ctk.CTkFrame(
+                    self.menu_frame,
+                    height=MK_BLANK_HEIGHT,
+                    fg_color="transparent"
+                ).pack(fill="x")
+
+            else:
+                ctk.CTkButton(
+                    self.menu_frame,
+                    text=nom,
+                    command=lambda name=nom: self.show_view(name),
+                    corner_radius=0,
+                    fg_color=self.UIColors.PRIMARY,
+                    hover_color=self.UIColors.SECONDARY,
+                ).pack(fill="x", padx=5, pady=2)
 
     # -------------------------
     # Affichage d'une vue
@@ -60,5 +100,7 @@ class BaseRef_UICore(UI_Core):
             self.current_view = view_cls(self.content_frame, ui_colors=self.UIColors)
             self.current_view.pack(expand=True, fill="both")
         else:
-            label = ctk.CTkLabel(self.content_frame, text=f"Vue '{view_name}' non trouvée")
-            label.pack(expand=True, fill="both")
+            ctk.CTkLabel(
+                self.content_frame,
+                text=f"Vue '{view_name}' non trouvée"
+            ).pack(expand=True, fill="both")

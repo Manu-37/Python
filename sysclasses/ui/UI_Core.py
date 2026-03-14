@@ -1,28 +1,40 @@
 import customtkinter as ctk
 
+# --------------------------------------------------
+# Mots-clés de structure de menu
+# Utilisés dans _menu_definition des UI_Core filles.
+# Toujours une constante explicite — jamais None.
+# --------------------------------------------------
+MK_SEP   = "MK_SEP"    # Séparateur horizontal (ligne fine)
+MK_BLANK = "MK_BLANK"  # Espace blanc (~80% hauteur d'un bouton)
+
+# Hauteur en pixels du MK_BLANK — ajustable ici sans chercher dans le code
+MK_BLANK_HEIGHT = 26
+
 
 class UI_Core(ctk.CTk):
     """
     Coeur UI générique commun à toutes les applications.
     Ne contient aucune logique métier.
     """
+
     class UIColors:
-    # -----------------------------
-    # Thème entreprise unifié
-    # -----------------------------
-        PRIMARY = "#1F6AA5"
-        SECONDARY = "#144870"
-        BACKGROUND = "#F2F2F2"
-        SEPARATOR_LIGHT = "#c0c0c0"
-        SEPARATOR_DARK  = "#505050"
-        GRISE_BG = "#e4e4e4"
-        GRISE_FG  = "#7A7A7A"
-        FONT_DEFAULT = ("Segoe UI", 12)
+        # -----------------------------
+        # Thème entreprise unifié
+        # -----------------------------
+        PRIMARY          = "#1F6AA5"
+        SECONDARY        = "#144870"
+        BACKGROUND       = "#F2F2F2"
+        SEPARATOR_LIGHT  = "#c0c0c0"
+        SEPARATOR_DARK   = "#505050"
+        GRISE_BG         = "#e4e4e4"
+        GRISE_FG         = "#7A7A7A"
+        FONT_DEFAULT     = ("Segoe UI", 12)
 
         # --- DataGrid ---
-        GRID_ROW_EVEN     = ("gray95", "gray20")      # lignes paires   (clair, sombre)
-        GRID_ROW_ODD      = ("gray90", "gray25")      # lignes impaires (clair, sombre)
-        GRID_ROW_SELECTED = ("lightblue", "#1f538d")  # ligne sélectionnée
+        GRID_ROW_EVEN     = ("gray95", "gray20")
+        GRID_ROW_ODD      = ("gray90", "gray25")
+        GRID_ROW_SELECTED = ("lightblue", "#1f538d")
 
     def __init__(self, *, width: int, height: int, min_width: int, min_height: int):
         super().__init__()

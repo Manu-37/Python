@@ -11,6 +11,6 @@ from .clsEmailManager import clsEmailManager
 from .ui.DataGrid import DataGrid
 from .ui.MessageDialog import MessageDialog
 from .ui.AutoFormView import AutoFormView
-from .ui.UI_Core import UI_Core
+from .ui.UI_Core import UI_Core, MK_SEP, MK_BLANK, MK_BLANK_HEIGHT
 from .ui.Entity_ListView import Entity_ListView
 from .AppBootstrap import AppBootstrap
