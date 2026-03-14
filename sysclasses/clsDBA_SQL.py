@@ -29,7 +29,7 @@ class clsDBA_SQL(clsDBA_ABS):
                 self._log.info(f"Ouverture tunnel SSH vers {ssh_params['host']}...")
                 
                 # Lecture intègre (newline='') pour éviter la corruption Windows
-                with open(ssh_params['key_path'], 'r', encoding='utf-8', newline='') as f:
+                with open(ssh_params['ssh_key_path'], 'r', encoding='utf-8', newline='') as f:
                     key_text = f.read()
                 
                 key_stream = io.StringIO(key_text)

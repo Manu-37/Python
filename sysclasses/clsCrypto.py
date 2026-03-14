@@ -1,6 +1,6 @@
 import os
 from cryptography.fernet import Fernet
-from sysclasses.clsINIDBBaseRef import clsINIDBBaseRef
+from sysclasses.clsINISecurity import clsINISecurity
 
 
 class clsCrypto:
@@ -8,6 +8,10 @@ class clsCrypto:
     Gère le chiffrement et le déchiffrement des données sensibles.
     La clé est stockée physiquement hors de l'application.
     Singleton : une seule instance par processus.
+
+    La clé de chiffrement et security.ini résident sur le même partage réseau.
+    Un attaquant disposant des deux peut déchiffrer les credentials.
+    Risque accepté — infrastructure domestique, pas de serveur de clés dédié disponible.
     """
     _instance    = None
     _initialized = False
@@ -23,8 +27,19 @@ class clsCrypto:
             return
         self._initialized = True
 
-        # Récupération du singleton clsINIDBBaseRef déjà initialisé à l'étape 2
-        self._security_path = clsINIDBBaseRef().security_params.get('key_path')
+        # Reconstruction du chemin complet :
+        # chemin_base (path du .ini projet) + security_key_file (nom du fichier)
+        oSecurity         = clsINISecurity()
+        chemin_base       = oSecurity.base_path
+        security_key_file = oSecurity.security_params.get('security_key_file')
+
+        if not security_key_file:
+            raise ValueError(
+                "clsCrypto | 'security_key_file' absent de la section [SECURITY] "
+                "dans security.ini."
+            )
+
+        self._security_path = chemin_base / security_key_file
         self._cipher        = self._load_or_create_key()
 
     def _load_or_create_key(self) -> Fernet:
@@ -35,7 +50,7 @@ class clsCrypto:
                 key_file.write(key)
             try:
                 os.chmod(self._security_path, 0o400)
-            except:
+            except Exception:
                 pass
         with open(self._security_path, "rb") as key_file:
             key = key_file.read()

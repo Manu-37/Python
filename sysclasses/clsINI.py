@@ -20,7 +20,7 @@ class clsINI:
 
     def __init__(self, filename: str):
         self._filename = filename
-        self._config   = configparser.ConfigParser()
+        self._config   = configparser.ConfigParser(interpolation=None)
         if not os.path.exists(self._filename):
             raise FileNotFoundError(f"Fichier introuvable : {self._filename}")
         self._config.read(self._filename, encoding='utf-8')

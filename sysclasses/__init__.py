@@ -1,7 +1,7 @@
 from .cste_chemins import init_chemins, get_app_dir, get_python_dir, get_projet_nom, get_projet_ver
 from .clsINI import clsINI
 from .clsINICommun import clsINICommun
-from .clsINIDBBaseRef import clsINIDBBaseRef
+from .clsINISecurity import clsINISecurity
 from .clsCrypto import clsCrypto
 from .clsDBA_SQL import clsDBA_SQL
 from .clsDBAManager import clsDBAManager

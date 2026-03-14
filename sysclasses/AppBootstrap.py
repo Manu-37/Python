@@ -1,7 +1,7 @@
 import sys
 
 from sysclasses.clsINICommun    import clsINICommun
-from sysclasses.clsINIDBBaseRef import clsINIDBBaseRef
+from sysclasses.clsINISecurity  import clsINISecurity
 from sysclasses.clsLOG          import clsLOG
 from sysclasses.clsCrypto       import clsCrypto
 from sysclasses.clsDBAManager   import clsDBAManager
@@ -14,10 +14,10 @@ class AppBootstrap:
 
     Ordre immuable :
         1. clsINICommun    — fichier ini projet (sous-classe obligatoire)
-        2. clsINIDBBaseRef — fichier db_baseref.ini (données sensibles)
+        2. clsINISecurity  — fichier security.ini (données sensibles)
         3. clsLOG          — dépend de clsINICommun + cste_chemins
-        4. clsCrypto       — dépend de clsINIDBBaseRef
-        5. clsDBAManager   — dépend de clsINICommun + clsINIDBBaseRef
+        4. clsCrypto       — dépend de clsINISecurity
+        5. clsDBAManager   — dépend de clsINICommun + clsINISecurity
         6. clsEmailManager — dépend de clsINICommun
 
     Modes :
@@ -52,12 +52,12 @@ class AppBootstrap:
 
         self._mode = mode.lower()
 
-        self.oIni     = self._init_ini(ini_file, ini_class)
-        self.oIniDBBR = self._init_ini_dbbaseref()
-        self.oLog     = self._init_log()
-        self.oCrypto  = self._init_crypto()
-        self.oDB      = self._init_dba()
-        self.oEmail   = self._init_email()
+        self.oIni      = self._init_ini(ini_file, ini_class)
+        self.oSecurity = self._init_security()
+        self.oLog      = self._init_log()
+        self.oCrypto   = self._init_crypto()
+        self.oDB       = self._init_dba()
+        self.oEmail    = self._init_email()
 
     # --------------------------------------------------
     # Étape 1 — INI projet
@@ -79,25 +79,25 @@ class AppBootstrap:
             )
 
     # --------------------------------------------------
-    # Étape 2 — INI db_baseref
+    # Étape 2 — INI Security
     # --------------------------------------------------
-    def _init_ini_dbbaseref(self) -> clsINIDBBaseRef:
+    def _init_security(self) -> clsINISecurity:
         try:
             from pathlib import Path
             key_path = self.oIni.env_params.get('path')
             if not key_path:
                 raise ValueError("La clé 'path' est absente de la section [ENVIRONNEMENT].")
-            return clsINIDBBaseRef(Path(key_path) / 'db_baseref.ini')
+            return clsINISecurity(Path(key_path) / 'security.ini')
         except FileNotFoundError:
             self._erreur_fatale(
                 "Erreur de configuration",
-                "Fichier db_baseref.ini introuvable.\n\n"
+                "Fichier security.ini introuvable.\n\n"
                 "Vérifiez le paramètre 'path' dans [ENVIRONNEMENT]."
             )
         except Exception as e:
             self._erreur_fatale(
                 "Erreur de configuration",
-                f"Impossible de lire db_baseref.ini.\n\nDétail : {e}"
+                f"Impossible de lire security.ini.\n\nDétail : {e}"
             )
 
     # --------------------------------------------------

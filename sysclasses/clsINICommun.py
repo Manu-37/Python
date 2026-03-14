@@ -52,10 +52,7 @@ class clsINICommun(clsINI):
     @property
     def env_params(self) -> dict:
         """Récupère tout ENVIRONNEMENT et gère le booléen ssh_enabled."""
-        d = self.get_section("ENVIRONNEMENT")
-        if 'ssh_enabled' in d:
-            d['ssh_enabled'] = d['ssh_enabled'].upper() == 'TRUE'
-        return d
+        return self.get_section("ENVIRONNEMENT")
 
     @property
     def log_params(self) -> dict:

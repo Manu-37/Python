@@ -1,5 +1,5 @@
 from .clsINICommun    import clsINICommun
-from .clsINIDBBaseRef import clsINIDBBaseRef
+from .clsINISecurity  import clsINISecurity
 from .clsLOG          import clsLOG
 from .clsCrypto       import clsCrypto
 from .clsSQL_Postgre  import clsSQL_Postgre
@@ -29,24 +29,26 @@ class clsDBAManager:
             return
         self._initialized = True
 
-        self._config  = config_inst
-        self._log     = clsLOG()
+        self._config      = config_inst
+        self._log         = clsLOG()
         self._connections = {}
 
-        # Récupération du singleton clsINIDBBaseRef déjà initialisé à l'étape 2
-        self._baseref = clsINIDBBaseRef()
-        self._crypto  = clsCrypto()
+        # clsINISecurity remplace clsINIDBBaseRef
+        self._security = clsINISecurity()
+        self._crypto   = clsCrypto()
 
         self._init_registry()
 
     def _init_registry(self):
         """Ouvre la connexion maître vers le catalogue (db_baseref)."""
-        db_p  = self._baseref.db_params
-        env_p = self._config.env_params
+        db_p  = self._security.db_params
+        ssh_p = self._security.ssh_params
 
-        ssh_p = None
-        if env_p.get('ssh_enabled'):
-            ssh_p = self._baseref.ssh_params
+        # ssh_enabled est désormais dans ssh_params (clsINISecurity)
+        # et non plus dans env_params (clsINICommun)
+        if not ssh_p.get('ssh_enabled'):
+            ssh_p = None
+        else:
             ssh_p['enabled'] = True
 
         db_ref = clsSQL_Postgre(self._log)
