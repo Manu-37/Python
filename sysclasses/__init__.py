@@ -8,6 +8,7 @@ from .clsDBAManager import clsDBAManager
 from .clsSQL_Postgre import clsSQL_Postgre
 from .clsLOG import clsLOG
 from .clsEmailManager import clsEmailManager
+from .exceptions import ErreurValidationBloquante, AvertissementValidation
 from .ui.DataGrid import DataGrid
 from .ui.MessageDialog import MessageDialog
 from .ui.AutoFormView import AutoFormView

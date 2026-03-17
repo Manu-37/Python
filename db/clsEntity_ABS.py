@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from sysclasses import clsCrypto
+from sysclasses.clsCrypto import clsCrypto
+from sysclasses.exceptions import ErreurValidationBloquante, AvertissementValidation
 from db.clsTableMetadata import clsTableMetadata
 
 
@@ -8,6 +9,16 @@ class clsEntity_ABS(ABC):
     Classe abstraite socle de toutes les entités métier.
     Les classes filles DOIVENT définir : _schema, _table, _pk, ctrl_valeurs().
     Les singletons ogLog, ogEngine, ogManager sont injectés par clsBaseRef.
+
+    Contrat de validation :
+        ctrl_valeurs() est le juge de paix unique — appelé systématiquement
+        dans insert() et update(), quelle que soit l'origine de l'appel
+        (UI, script de maintenance, traitement par lot...).
+        Impossible de contourner la validation en passant par les classes métier.
+
+        Deux niveaux de retour :
+            flag_error=True  → ErreurValidationBloquante — opération interdite
+            flag_error=False, libelle non vide → AvertissementValidation — opération autorisée
     """
 
     # --- Contrat de variables de classe ---
@@ -31,23 +42,20 @@ class clsEntity_ABS(ABC):
 
     def __init__(self, **kwargs):
         self._data          = {}
-        self._data_original = {}   # snapshot immuable au chargement — sert au WHERE et à la détection de changements
+        self._data_original = {}
         self._oltable_metadata: clsTableMetadata = None
         self.oCrypto = clsCrypto()
 
         if kwargs:
             pk = self._pk
-            # PK composite : on vérifie si TOUTES les clés PK sont présentes
             if isinstance(pk, list):
                 pk_present = all(k in kwargs for k in pk)
             else:
                 pk_present = pk in kwargs
 
             if pk_present and len(kwargs) > (len(pk) if isinstance(pk, list) else 1):
-                # Toutes les colonnes sont fournies → mapping direct (depuis SQL)
                 self._map_data(kwargs)
             else:
-                # Seulement la/les PK ou critères partiels → chargement depuis la base
                 self.ChargerDonnees(kwargs)
 
     # --- Mapping ---
@@ -70,7 +78,7 @@ class clsEntity_ABS(ABC):
         """
         Charge une ligne depuis la base selon des critères (PK simple ou composite).
         Ex: criteres = {'env_id': 1}
-        Ex: criteres = {'nbe_bas_id': 1, 'nbe_env_id': 2}
+        Ex: criteres = {'bas_id': 1, 'env_id': 2}
         """
         clauses = [f"{col} = {self.ogEngine.placeholder}" for col in criteres.keys()]
         where_clause = " AND ".join(clauses)
@@ -96,13 +104,6 @@ class clsEntity_ABS(ABC):
         """
         Retourne toutes les lignes de la table sous forme de liste de dict.
         Utilisé par Entity_ListView pour alimenter la DataGrid.
-
-        order_by : nom de colonne (ex: "env_code") ou None → pas de tri.
-
-        Fonctionnement :
-        - cls._DB_SYMBOLIC_NAME est défini dans clsBaseRef (hérité par toutes les entités).
-        - clsDBAManager() sans argument retourne le singleton existant.
-        - On résout la connexion via le nom symbolique, comme partout ailleurs.
         """
         from sysclasses.clsDBAManager import clsDBAManager
         engine = clsDBAManager().get_db(cls._DB_SYMBOLIC_NAME)
@@ -118,9 +119,6 @@ class clsEntity_ABS(ABC):
         """
         Retourne les métadonnées de la table (clsTableMetadata).
         Utilisé par Entity_ListView pour alimenter DataGrid (largeurs, cadrages).
-
-        Même pattern que load_all : méthode de classe, pas d'instance,
-        résolution de la connexion via le nom symbolique.
         """
         from sysclasses.clsDBAManager import clsDBAManager
         engine = clsDBAManager().get_db(cls._DB_SYMBOLIC_NAME)
@@ -131,10 +129,19 @@ class clsEntity_ABS(ABC):
     def insert(self):
         """
         Insère une nouvelle ligne.
+        - Validation métier systématique via ctrl_valeurs() — impossible de contourner.
         - PK auto (SERIAL/IDENTITY) : exclue de l'INSERT, récupérée via RETURNING.
         - PK fournie : vérifiée avant insertion.
         - PK composite : chaque colonne PK doit être renseignée.
         """
+        # Validation métier — garde-fou systématique
+        # Protège aussi les insertions par lot et les scripts de maintenance
+        flag_erreur, libelle_erreur = self.ctrl_valeurs()
+        if flag_erreur:
+            raise ErreurValidationBloquante(libelle_erreur)
+        elif libelle_erreur:
+            raise AvertissementValidation(libelle_erreur)
+
         metadata = self.TableMetadata
         pk_cols  = metadata.primary_keys
         auto_pk  = metadata.auto_increment_pk
@@ -171,6 +178,17 @@ class clsEntity_ABS(ABC):
             return tuple(getattr(self, col) for col in pk_cols)
 
     def update(self):
+        """
+        Met à jour une ligne existante.
+        - Validation métier systématique via ctrl_valeurs() — impossible de contourner.
+        """
+        # Validation métier — même garde-fou que insert()
+        flag_erreur, libelle_erreur = self.ctrl_valeurs()
+        if flag_erreur:
+            raise ErreurValidationBloquante(libelle_erreur)
+        elif libelle_erreur:
+            raise AvertissementValidation(libelle_erreur)
+
         metadata = self.TableMetadata
         pk_cols  = metadata.primary_keys
 
@@ -185,11 +203,7 @@ class clsEntity_ABS(ABC):
             raise ValueError("UPDATE impossible : PK originale incomplète.")
 
         # Détection des colonnes réellement modifiées.
-        # On inspecte toutes les colonnes non-identity :
-        # - colonnes standard (non PK)
-        # - colonnes PK+FK (PK composite de table de liaison — modifiables en UPDATE)
-        # On exclut uniquement les PK pures non-FK (identité technique de la ligne)
-        # et les colonnes identity (générées par la DB).
+        # On exclut les PK pures non-FK et les colonnes identity.
         all_cols = [
             col["name"] for col in metadata._metadata
             if not col["is_identity"]
@@ -206,7 +220,6 @@ class clsEntity_ABS(ABC):
             return None
 
         update_values = [self._data.get(col) for col in update_cols]
-
         self.ogLog.debug(f"{self.__class__.__name__} : UPDATE sur {update_cols}")
 
         result = self.ogEngine.update(
@@ -219,9 +232,7 @@ class clsEntity_ABS(ABC):
         )
 
         # Après un UPDATE réussi, on resynchronise _data_original
-        # pour refléter le nouvel état persisté
         self._data_original = dict(self._data)
-
         return result
 
     def delete(self):
@@ -263,9 +274,7 @@ class clsEntity_ABS(ABC):
 
     @classmethod
     def DepuisResultat(cls, resultats_sql: list[dict]):
-        """
-        Instancie une liste d'objets depuis un résultat SQL.
-        """
+        """Instancie une liste d'objets depuis un résultat SQL."""
         objets = []
         if resultats_sql:
             for row in resultats_sql:
@@ -277,19 +286,7 @@ class clsEntity_ABS(ABC):
     def get_list_FK(self, col_name: str) -> list[tuple]:
         """
         Retourne la liste des choix pour un ComboBox FK.
-
         Retourne une liste de tuples : [(id, "label affiché"), ...]
-        Le label est la concaténation des colonnes déclarées dans FK_DISPLAY,
-        séparées par ' — '.
-        Le tri est effectué sur la première colonne de FK_DISPLAY.
-
-        Prérequis :
-        - La colonne col_name doit être marquée is_fk dans TableMetadata.
-        - La classe fille doit déclarer FK_DISPLAY = {"col": ["col1", "col2"]}
-
-        Exemple :
-            get_list_FK("env_id")
-            → [(1, "DEV — Environnement de développement"), (2, "PROD — Production")]
         """
         metadata = self.TableMetadata
         col_meta = metadata.get_column(col_name)
@@ -308,9 +305,8 @@ class clsEntity_ABS(ABC):
         fk_schema    = col_meta["fk_schema"]
         fk_table     = col_meta["fk_table"]
         fk_value_col = col_meta["fk_value_col"]
-        order_col    = display_cols[0]   # tri sur la première colonne display
+        order_col    = display_cols[0]
 
-        # On sélectionne la colonne valeur + toutes les colonnes d'affichage
         select_cols = ", ".join([fk_value_col] + display_cols)
 
         sql = (

@@ -1,3 +1,5 @@
+import socket
+from pathlib import Path
 from .clsINICommun    import clsINICommun
 from .clsINISecurity  import clsINISecurity
 from .clsLOG          import clsLOG
@@ -56,6 +58,109 @@ class clsDBAManager:
         self._connections['__REGISTRY__'] = db_ref
         self._log.info("Registre central connecté.")
 
+    @staticmethod
+    def _get_client_host() -> str:
+        """
+        Retourne l'adresse IP de la machine qui exécute l'applicatif.
+        Utilisé par _resolve_ssh() pour déterminer si un tunnel SSH est nécessaire.
+
+        Principe : on ouvre une socket UDP vers une adresse externe (8.8.8.8)
+        sans envoyer de données — cela force l'OS à sélectionner l'interface
+        réseau active et donc l'IP locale réelle.
+        Cette méthode est plus fiable que socket.gethostbyname(gethostname())
+        qui peut retourner 127.0.0.1 sur certaines configurations Linux.
+        """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+        except Exception:
+            return "127.0.0.1"
+
+    def _resolve_ssh(self, oNbe) -> dict | None:
+        """
+        ============================================================
+        SECTION CRITIQUE — Résolution dynamique du tunnel SSH
+        ============================================================
+
+        Problème :
+            Un même applicatif peut s'exécuter depuis des machines
+            différentes (PC Windows, Freebox Linux) et atteindre des
+            bases sur des serveurs différents (Freebox, PC Windows,
+            serveur externe). Le besoin d'un tunnel SSH dépend donc
+            du couple (machine cliente, serveur cible) — pas de la
+            base seule, pas du client seul.
+
+        Exemple concret :
+            Base TSTAT_ADMIN sur la Freebox (192.168.1.51) :
+            - Depuis le PC Windows  → SSH nécessaire (machines différentes)
+            - Depuis la Freebox     → SSH inutile (même machine)
+
+        Règle appliquée :
+            1. On récupère l'IP de la machine cliente dynamiquement.
+            2. On détermine l'IP du serveur "réel" :
+               - Si SSH configuré dans NBE → le serveur SSH est la passerelle,
+                 c'est son IP qu'on compare (nbe_ssh_host)
+               - Sinon → c'est l'IP directe du serveur DB (nbe_host)
+            3. Si client_host == serveur_host → même machine → connexion directe
+            4. Sinon → SSH si configuré dans NBE, connexion directe sinon
+
+        Hypothèse importante :
+            Les serveurs ont des IP fixes sur le réseau local.
+            Si un jour un applicatif Linux doit atteindre le MSSQL
+            sur le PC Windows, il faudra passer le PC en IP fixe.
+            Ce cas n'existe pas aujourd'hui — décision reportée volontairement.
+
+        Paramètre :
+            oNbe : instance de clsBAS_ENV_NBE — contient host, ssh_host,
+                   ssh_enabled et tous les paramètres de connexion.
+
+        Retourne :
+            dict ssh_params si tunnel nécessaire, None sinon.
+        ============================================================
+        """
+        client_host = self._get_client_host()
+
+        # L'IP du serveur "réel" à comparer avec le client :
+        # si SSH est configuré dans NBE, la passerelle SSH EST le serveur cible
+        # (c'est elle qu'on atteint en premier depuis le réseau)
+        serveur_host = oNbe.nbe_ssh_host if oNbe.nbe_ssh_enabled else oNbe.nbe_host
+
+        self._log.debug(
+            f"_resolve_ssh | client={client_host} | serveur={serveur_host} | "
+            f"ssh_configured={oNbe.nbe_ssh_enabled}"
+        )
+
+        # Même machine → connexion directe, SSH inutile et contre-productif
+        if client_host == serveur_host:
+            self._log.debug(
+                "_resolve_ssh | client == serveur → connexion directe, SSH ignoré"
+            )
+            return None
+
+        # Machines différentes → SSH si configuré dans NBE
+        if oNbe.nbe_ssh_enabled:
+            self._log.debug(
+                "_resolve_ssh | client != serveur + SSH configuré → tunnel SSH établi"
+            )
+
+            base_path = Path(self._config.env_params.get('path'))
+
+            return {
+                'enabled':  True,
+                'host':     oNbe.nbe_ssh_host,
+                'port':     int(oNbe.nbe_ssh_port),
+                'user':     oNbe.nbe_ssh_user,
+                'ssh_key_path': base_path / oNbe.nbe_ssh_key_path
+            }
+
+        # Machines différentes mais SSH non configuré → connexion directe tentée
+        # (cas MSSQL local, réseau privé sans SSH, etc.)
+        self._log.debug(
+            "_resolve_ssh | client != serveur + SSH non configuré → connexion directe tentée"
+        )
+        return None
+
     def get_db(self, symbolique_name: str):
         """
         Retourne une connexion active.
@@ -72,9 +177,10 @@ class clsDBAManager:
 
         from db.db_baseref import clsENV, clsBAS, clsBAS_ENV_NBE
 
-        env_type = self._config.env_params.get('TYPE', '')
+        print(f"DEBUG TYPE = '{self._config.env_params.get('type', '')}'")
+        env_type = self._config.env_params.get('type', '')
         if not env_type:
-            self._log.error("get_db : TYPE d'environnement non défini dans la config.")
+            self._log.error("get_db : type d'environnement non défini dans la config.")
             return None
 
         oEnv = clsENV(env_code=env_type)
@@ -84,7 +190,7 @@ class clsDBAManager:
             self._log.error(f"get_db : base '{symbolique_name}' ou env '{env_type}' introuvable.")
             return None
 
-        oNbe = clsBAS_ENV_NBE(nbe_bas_id=oBas.bas_id, nbe_env_id=oEnv.env_id)
+        oNbe = clsBAS_ENV_NBE(bas_id=oBas.bas_id, env_id=oEnv.env_id)
 
         if not oNbe.nbe_host:
             self._log.error(f"get_db : configuration introuvable pour {symbolique_name}/{env_type}")
@@ -98,15 +204,9 @@ class clsDBAManager:
             'pwd':    oNbe.nbe_pwd
         }
 
-        ssh_p = None
-        if oNbe.nbe_ssh_enabled:
-            ssh_p = {
-                'enabled':  True,
-                'host':     oNbe.nbe_ssh_host,
-                'port':     int(oNbe.nbe_ssh_port),
-                'user':     oNbe.nbe_ssh_user,
-                'key_path': oNbe.nbe_ssh_key_path
-            }
+        # Résolution dynamique du tunnel SSH — voir _resolve_ssh() pour
+        # l'explication complète de la logique
+        ssh_p = self._resolve_ssh(oNbe)
 
         engine = clsSQL_Postgre(self._log)
         try:

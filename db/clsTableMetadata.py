@@ -57,12 +57,17 @@ class clsTableMetadata:
     def display_columns(self) -> list[str]:
         """
         Retourne les colonnes à afficher dans une liste standard.
-        Convention : toutes les colonnes sauf les identity (PK auto-générées).
-
+        Exclut :
+            - les colonnes identity (PK auto-générées)
+            - les colonnes BINARY (BYTEA chiffré — illisible et sensible)
         TODO : prévoir un mécanisme de sélection/masquage/substitution
                de colonnes par entité (ex: FK affichée comme libellé plutôt qu'ID).
         """
-        return [col["name"] for col in self._metadata if not col["is_identity"]]
+        return [
+            col["name"] for col in self._metadata
+            if not col["is_identity"]
+            and col["canonical_type"][0] != "BINARY"
+        ]
 
     def get_column(self, col_name: str) -> dict:
         for col in self._metadata:

@@ -3,6 +3,8 @@ from sysclasses.ui.UI_Core import UI_Core, MK_SEP, MK_BLANK, MK_BLANK_HEIGHT
 from .views.Environment_ListView import Environment_ListView
 from .views.Base_ListView import Base_ListView
 from .views.Bas_Env_ListView import Bas_Env_ListView
+from .views.Vehicule_ListView import Vehicule_ListView
+from .views.Token_ListView import Token_ListView
 from .views.Crypto_View import Crypto_View
 import customtkinter as ctk
 
@@ -29,16 +31,15 @@ class BaseRef_UICore(UI_Core):
             ("Bases de données",         Base_ListView),
             ("Paramétrages bases / env", Bas_Env_ListView),
             (MK_SEP,   None),
-            # --- Groupe Tesla (futur) ---
-            # ("Paramètres Tesla",       Tesla_ListView),
+            # --- Groupe Tesla ---
+            ("Véhicules",                Vehicule_ListView),
+            ("Tokens Tesla",             Token_ListView),
             (MK_BLANK, None),
             (MK_SEP,   None),
             # --- Groupe Utilitaires ---
             ("Chiffrement",              Crypto_View),
         ]
 
-        # Dictionnaire nom → classe reconstruit depuis _menu_definition.
-        # On exclut les marqueurs MK_* qui ne correspondent à aucune vue.
         self.views = {
             nom: cls
             for nom, cls in self._menu_definition

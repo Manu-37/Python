@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from sysclasses.ui.MessageDialog import MessageDialog
+from sysclasses.exceptions import ErreurValidationBloquante, AvertissementValidation
 
 
 class AutoFormView(ctk.CTkFrame):
@@ -161,7 +162,6 @@ class AutoFormView(ctk.CTkFrame):
         justify    = "right" if anchor == "e" else "left"
 
         if family == "BOOLEAN":
-            # text="" pour ne pas afficher le nom du widget par défaut
             return ctk.CTkCheckBox(self._scroll_frame, text="")
 
         if family == "STRING":
@@ -217,6 +217,17 @@ class AutoFormView(ctk.CTkFrame):
     # Sauvegarde
     # --------------------------------------------------
     def _save(self):
+        """
+        Collecte les valeurs du formulaire, les convertit et les stocke
+        dans l'entité via setattr.
+
+        Aucune validation ici — ctrl_valeurs() est appelé systématiquement
+        dans insert() et update() de clsEntity_ABS. C'est le seul juge de paix.
+
+        Deux niveaux de retour depuis insert()/update() :
+            ErreurValidationBloquante → rollback, on reste sur le formulaire
+            AvertissementValidation   → commit, on informe l'utilisateur et on ferme
+        """
         metadata = self.entity.TableMetadata
 
         for column, widget in self._fields_widgets.items():
@@ -238,14 +249,8 @@ class AutoFormView(ctk.CTkFrame):
             # --- FK : traduire le label sélectionné en id ---
             if is_fk:
                 label_sel = widget.get()
-                if not label_sel:
-                    if not col_meta["nullable"]:
-                        MessageDialog.error(self, "Erreur", f"{column} est obligatoire.")
-                        return
-                    setattr(self.entity, column, None)
-                else:
-                    setattr(self.entity, column,
-                            self._fk_maps.get(column, {}).get(label_sel))
+                setattr(self.entity, column,
+                        self._fk_maps.get(column, {}).get(label_sel) if label_sel else None)
                 continue
 
             if family == "BOOLEAN":
@@ -253,50 +258,55 @@ class AutoFormView(ctk.CTkFrame):
             else:
                 value = widget.get()
 
-            if not col_meta["nullable"] and value == "":
-                MessageDialog.error(self, "Erreur", f"{column} est obligatoire.")
-                return
+            # Champ vide → None
+            # ctrl_valeurs() dans l'entité jugera si c'est acceptable ou non
+            if value == "":
+                setattr(self.entity, column, None)
+                continue
 
             # Conversion de type selon la famille canonique
-            if value != "" and value is not None:
-                if family == "NUMERIC":
-                    sub_type = col_meta["canonical_type"][1] if isinstance(col_meta["canonical_type"], tuple) else ""
-                    try:
-                        if sub_type in ("FLOAT", "DOUBLE", "DECIMAL"):
-                            value = float(value)
-                        else:
-                            value = int(value)
-                    except (ValueError, TypeError):
-                        MessageDialog.error(self, "Erreur", f"{column} : valeur numérique invalide.")
-                        return
+            if family == "NUMERIC":
+                sub_type = col_meta["canonical_type"][1] if isinstance(col_meta["canonical_type"], tuple) else ""
+                try:
+                    value = float(value) if sub_type in ("FLOAT", "DOUBLE", "DECIMAL") else int(value)
+                except (ValueError, TypeError):
+                    value = None
 
             setattr(self.entity, column, value)
 
-        # Validation métier
-        if hasattr(self.entity, "ctrl_valeurs"):
-            flag_erreur, libelle_erreur = self.entity.ctrl_valeurs()
-            if libelle_erreur:
-                MessageDialog.error(self, "Erreur", libelle_erreur)
-                if flag_erreur:
-                    return
-
-        # Exécution CRUD
+        # --- Exécution CRUD ---
+        # ctrl_valeurs() est appelé dans insert()/update() — pas ici.
+        # _save() ne valide rien, il exécute et gère les exceptions.
         try:
-            if self.mode == "INSERT" and hasattr(self.entity, "insert"):
+            if self.mode == "INSERT":
                 self.entity.insert()
-            elif self.mode == "UPDATE" and hasattr(self.entity, "update"):
+            elif self.mode == "UPDATE":
                 self.entity.update()
-            elif self.mode == "DELETE" and hasattr(self.entity, "delete"):
-                if MessageDialog.confirm(
+            elif self.mode == "DELETE":
+                if not MessageDialog.confirm(
                     self, "Confirmation",
                     "Voulez-vous supprimer cet enregistrement ?",
                     confirm_label="Supprimer"
                 ):
-                    self.entity.delete()
-                else:
                     return
+                self.entity.delete()
 
             self.entity.ogEngine.commit()
+
+        except ErreurValidationBloquante as e:
+            # Erreur fatale — INSERT/UPDATE interdit
+            # On ne commit pas, on reste sur le formulaire
+            self.entity.ogEngine.rollback()
+            MessageDialog.error(self, "Erreur de validation", str(e))
+            return
+
+        except AvertissementValidation as e:
+            # Avertissement non bloquant — données enregistrées
+            # Le commit a déjà eu lieu avant la levée de l'exception
+            # dans insert()/update() — on informe et on ferme
+            self.entity.ogEngine.commit()
+            MessageDialog.warning(self, "Avertissement",
+                                  f"Enregistrement effectué avec des avertissements :\n{str(e)}")
 
         except Exception as e:
             self.entity.ogEngine.rollback()
