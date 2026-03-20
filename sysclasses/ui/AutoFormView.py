@@ -138,7 +138,8 @@ class AutoFormView(ctk.CTkFrame):
         self._fk_maps[col_name]         = {label: val_id for val_id, label in choix}
         self._fk_maps_reverse[col_name] = {val_id: label for val_id, label in choix}
 
-        width = self.entity.TableMetadata.get_col_width(col_name)
+        #width = self.entity.TableMetadata.get_col_width(col_name)
+        width = 400
         combo = ctk.CTkComboBox(
             self._scroll_frame,
             values=labels,

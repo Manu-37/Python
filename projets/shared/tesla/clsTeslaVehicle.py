@@ -18,10 +18,15 @@ Contrat de retour — toutes les méthodes publiques retournent un dict structur
 Jamais d'exception non catchée — l'appelant (tstat_collecteur) décide quoi faire.
 """
 
+import json
 import time
 import requests
 
+from datetime import datetime
+from pathlib import Path
+
 from sysclasses.clsLOG import clsLOG
+from sysclasses.cste_chemins import get_app_dir
 
 
 # --------------------------------------------------
@@ -105,7 +110,6 @@ class clsTeslaVehicle:
                 )
 
             # Tesla renvoie 408 (Request Timeout) quand le véhicule est endormi
-            # et 200 avec response body quand tout va bien
             if reponse.status_code == 408:
                 return {
                     "erreur": f"Véhicule endormi ou injoignable (HTTP 408) — endpoint : {endpoint}",
@@ -155,10 +159,41 @@ class clsTeslaVehicle:
             self._log.error(f"clsTeslaVehicle | get_vehicles échoué : {resultat['erreur']}")
             return resultat
 
-        # L'API renvoie {"response": [...], "count": N}
-        # On expose directement la liste pour simplifier l'usage
         vehicules = resultat["data"].get("response", [])
         return {"erreur": None, "data": vehicules}
+
+    # --------------------------------------------------
+    # Résolution vehicle_id Tesla par VIN (usage interne)
+    # --------------------------------------------------
+
+    def _resolve_vehicle_id(self, vin: str) -> dict:
+        """
+        Retrouve le vehicle_id Tesla correspondant au VIN fourni.
+
+        Appelle get_vehicles() et filtre par VIN.
+        Méthode interne — réutilisée par save_snapshot() et potentiellement
+        par d'autres méthodes futures nécessitant l'ID Tesla natif.
+
+        Retourne :
+            {"erreur": None,  "data": <vehicle_id_tesla: int>}
+            {"erreur": "...", "data": None}
+        """
+        resultat = self.get_vehicles()
+
+        if resultat["erreur"]:
+            return resultat
+
+        for v in resultat["data"]:
+            if v.get("vin") == vin:
+                return {"erreur": None, "data": v.get("id")}
+
+        return {
+            "erreur": (
+                f"Véhicule VIN={vin} introuvable dans le compte Tesla. "
+                "Vérifiez que le VIN correspond bien au compte authentifié."
+            ),
+            "data": None
+        }
 
     # --------------------------------------------------
     # Réveil du véhicule
@@ -168,29 +203,18 @@ class clsTeslaVehicle:
         """
         Réveille le véhicule et attend confirmation de mise en ligne.
 
-        Tesla endort le véhicule après une période d'inactivité pour
-        préserver la batterie. Avant tout appel de données, il faut
-        s'assurer que le véhicule est "online".
-
-        Stratégie :
-            - POST /api/1/vehicles/{id}/wake_up
-            - Interroger l'état toutes les WAKE_DELAI secondes
-            - Maximum WAKE_MAX_ESSAIS tentatives
-
         Retourne :
-            {"erreur": None,  "data": {"state": "online", ...}}  — véhicule en ligne
-            {"erreur": "...", "data": None}                       — échec ou timeout
+            {"erreur": None,  "data": {"state": "online", ...}}
+            {"erreur": "...", "data": None}
         """
         self._log.info(f"clsTeslaVehicle | wake_up — vehicle_id={vehicle_id}")
 
-        # Envoi de la commande de réveil
         resultat = self._call(f"api/1/vehicles/{vehicle_id}/wake_up", method="POST")
 
         if resultat["erreur"]:
             self._log.error(f"clsTeslaVehicle | wake_up POST échoué : {resultat['erreur']}")
             return resultat
 
-        # Attente de la mise en ligne
         for essai in range(1, WAKE_MAX_ESSAIS + 1):
 
             etat = self._get_vehicle_state(vehicle_id)
@@ -211,8 +235,6 @@ class clsTeslaVehicle:
                     f"— état : {etat['data'].get('state', 'inconnu')}"
                 )
 
-            # Pas encore en ligne — on attend avant le prochain essai,
-            # sauf si c'était le dernier
             if essai < WAKE_MAX_ESSAIS:
                 time.sleep(WAKE_DELAI)
 
@@ -230,9 +252,7 @@ class clsTeslaVehicle:
     def _get_vehicle_state(self, vehicle_id: int) -> dict:
         """
         Récupère l'état sommaire du véhicule (online / asleep / offline).
-        Utilisé en interne par wake_up() pour vérifier la mise en ligne.
-
-        Endpoint : GET /api/1/vehicles/{id}
+        Utilisé en interne par wake_up().
 
         Retourne :
             {"erreur": None,  "data": {"id": ..., "state": "online", ...}}
@@ -254,28 +274,17 @@ class clsTeslaVehicle:
         Récupère le snapshot complet des données du véhicule.
         Réveille le véhicule si nécessaire.
 
-        Endpoint : GET /api/1/vehicles/{id}/vehicle_data
-
-        Le snapshot contient :
-            charge_state    : niveau batterie, autonomie, état de charge
-            climate_state   : température, climatisation
-            drive_state     : position GPS, vitesse, cap
-            vehicle_state   : kilométrage, verrouillage, mise à jour SW
-            gui_settings    : unités d'affichage
-
         Retourne :
             {"erreur": None,  "data": {"charge_state": {...}, ...}}
             {"erreur": "...", "data": None}
         """
         self._log.info(f"clsTeslaVehicle | get_vehicle_data — vehicle_id={vehicle_id}")
 
-        # Tentative directe — le véhicule est peut-être déjà en ligne
         resultat = self._call(f"api/1/vehicles/{vehicle_id}/vehicle_data")
 
-        # Si le véhicule est endormi (408 ou erreur explicite), on le réveille
         if resultat["erreur"]:
             self._log.info(
-                f"clsTeslaVehicle | get_vehicle_data — véhicule injoignable, "
+                "clsTeslaVehicle | get_vehicle_data — véhicule injoignable, "
                 "tentative de réveil."
             )
             reveil = self.wake_up(vehicle_id)
@@ -286,7 +295,6 @@ class clsTeslaVehicle:
                     "data":   None
                 }
 
-            # Deuxième tentative après réveil
             resultat = self._call(f"api/1/vehicles/{vehicle_id}/vehicle_data")
 
             if resultat["erreur"]:
@@ -299,3 +307,53 @@ class clsTeslaVehicle:
                 }
 
         return {"erreur": None, "data": resultat["data"].get("response", {})}
+
+    # --------------------------------------------------
+    # Snapshot complet + sauvegarde JSON
+    # --------------------------------------------------
+
+    def save_snapshot(self, vin: str) -> dict:
+        """
+        Récupère le snapshot complet du véhicule et le sauvegarde en JSON.
+
+        Résout automatiquement le vehicle_id Tesla depuis le VIN,
+        puis appelle get_vehicle_data() et écrit le résultat sur disque.
+
+        Nommage fichier : TeslaData_<VIN>_<AAAAMMJJHHMMSS>.json
+        Dossier         : <app_dir>/logs/
+
+        Retourne :
+            {"erreur": None,  "chemin": Path(...)}   — succès
+            {"erreur": "...", "chemin": None}         — échec à n'importe quelle étape
+        """
+        # --- Résolution vehicle_id Tesla ---
+        res_id = self._resolve_vehicle_id(vin)
+        if res_id["erreur"]:
+            self._log.error(f"clsTeslaVehicle | save_snapshot — {res_id['erreur']}")
+            return {"erreur": res_id["erreur"], "chemin": None}
+
+        vehicle_id_tesla = res_id["data"]
+        self._log.info(
+            f"clsTeslaVehicle | save_snapshot — VIN={vin} → id_tesla={vehicle_id_tesla}"
+        )
+
+        # --- Récupération des données ---
+        res_data = self.get_vehicle_data(vehicle_id_tesla)
+        if res_data["erreur"]:
+            self._log.error(f"clsTeslaVehicle | save_snapshot — {res_data['erreur']}")
+            return {"erreur": res_data["erreur"], "chemin": None}
+
+        # --- Sauvegarde JSON ---
+        horodatage  = datetime.now().strftime("%Y%m%d%H%M%S")
+        nom_fichier = f"TeslaData_{vin}_{horodatage}.json"
+
+        dossier_logs = get_app_dir() / "logs"
+        dossier_logs.mkdir(parents=True, exist_ok=True)
+
+        chemin = dossier_logs / nom_fichier
+
+        with open(chemin, "w", encoding="utf-8") as f:
+            json.dump(res_data["data"], f, indent=2, ensure_ascii=False, default=str)
+
+        self._log.info(f"clsTeslaVehicle | save_snapshot — fichier créé : {chemin}")
+        return {"erreur": None, "chemin": chemin}

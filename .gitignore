@@ -27,3 +27,6 @@ db_manager/
 
 #Les fichiers Jupyter
 *.ipynb
+
+#Les fichiers JSON
+*.JSON

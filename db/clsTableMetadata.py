@@ -85,12 +85,12 @@ class clsTableMetadata:
 
         Coefficients :
           NUMERIC  → (precision ou 10) * 9 + 20   min=60   max=160
-          STRING   → max_length * 8               min=80   max=400
+          STRING   → max_length * 8               min=80   max=600
           BOOLEAN  → 60  (fixe)
-          TEMPORAL → 120 (fixe)
+          TEMPORAL → 180 (fixe)
           UUID     → 280 (fixe)
-          JSON     → 150 (fixe)
-          BINARY   → 150 (fixe)
+          JSON     → 600 (fixe)
+          BINARY   → 600 (fixe)
           OTHER    → 120 (fixe)
         """
         col  = self.get_column(col_name)
@@ -105,19 +105,19 @@ class clsTableMetadata:
         if family == "STRING":
             max_length = col["max_length"] or 20
             width = max_length * 8
-            return max(80, min(width, 400))
+            return max(80, min(width, 600))
 
         if family == "BOOLEAN":
             return 60
 
         if family == "TEMPORAL":
-            return 120
+            return 180
 
         if family == "UUID":
             return 280
 
         if family in ("JSON", "BINARY"):
-            return 150
+            return 600
 
         # OTHER ou non mappé
         return 120
