@@ -327,14 +327,28 @@ class AutoFormView(ctk.CTkFrame):
     # Boutons (ancrés en bas, hors du scroll)
     # --------------------------------------------------
     def _build_buttons(self):
-        frame_btn = ctk.CTkFrame(self)
-        frame_btn.grid(row=2, column=0, pady=10)
+        self._frame_btn = ctk.CTkFrame(self)
+        self._frame_btn.grid(row=2, column=0, pady=10)
 
         if self.mode != "DISPLAY":
             ctk.CTkButton(
-                frame_btn, text="Enregistrer", command=self._save
+                self._frame_btn, text="Enregistrer", command=self._save
             ).pack(side="left", padx=5)
 
         ctk.CTkButton(
-            frame_btn, text="Annuler", command=self._cancel
+            self._frame_btn, text="Annuler", command=self._cancel
         ).pack(side="left", padx=5)
+
+        # 👇 HOOK (point d’extension)
+        self._extend_buttons()
+    
+    def _extend_buttons(self):
+        """
+        Hook pour ajouter des boutons personnalisés à la suite des boutons standards.
+        Appelé à la fin de _build_buttons().
+            Permet d'ajouter des boutons spécifiques à certaines entités sans toucher à la logique de base du formulaire.
+            Exemple : un bouton "Tester la connexion" dans le formulaire de configuration de base de données.
+            À implémenter dans les sous-classes qui en ont besoin.
+            Par défaut, ne fait rien.
+        """
+        pass

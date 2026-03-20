@@ -161,11 +161,13 @@ class clsDBAManager:
         )
         return None
 
-    def get_db(self, symbolique_name: str):
+    def get_db(self, symbolique_name: str, env_type_test: str = None):
         """
         Retourne une connexion active.
         - '__REGISTRY__' : toujours depuis le cache.
         - Autres noms   : résolution via les entités db_baseref si absent du cache.
+        - env_type_test : paramètre optionnel pour forcer un type d'environnement spécifique
+                            lors de la résolution (utilisé uniquement par le bouton test de baseRef_Manager).
         """
         if symbolique_name == '__REGISTRY__' and symbolique_name not in self._connections:
             raise RuntimeError(
@@ -176,9 +178,12 @@ class clsDBAManager:
             return self._connections[symbolique_name]
 
         from db.db_baseref import clsENV, clsBAS, clsBAS_ENV_NBE
-
-        print(f"DEBUG TYPE = '{self._config.env_params.get('type', '')}'")
-        env_type = self._config.env_params.get('type', '')
+        if env_type_test:
+            print(f"DEBUG TYPE = '{env_type_test}'")
+            env_type = env_type_test
+        else:
+            print(f"DEBUG TYPE = '{self._config.env_params.get('type', '')}'")
+            env_type = self._config.env_params.get('type', '')
         if not env_type:
             self._log.error("get_db : type d'environnement non défini dans la config.")
             return None
