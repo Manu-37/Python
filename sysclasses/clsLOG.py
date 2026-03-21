@@ -1,5 +1,6 @@
 import logging
 import sys
+import io
 import uuid
 import datetime
 import atexit
@@ -68,11 +69,18 @@ class clsLOG:
 
         formatter = logging.Formatter('%(message)s')
         handlers = [
-            logging.StreamHandler(sys.stdout),
+            logging.StreamHandler(
+                stream=io.TextIOWrapper(
+                    sys.stdout.buffer,
+                    encoding='utf-8',
+                    errors='replace'
+                ) if hasattr(sys.stdout, 'buffer') else sys.stdout
+            ),
             RotatingFileHandler(
                 str(log_path),
                 maxBytes=params['max_bytes'],
-                backupCount=params['backup_count']
+                backupCount=params['backup_count'],
+                encoding='utf-8'
             )
         ]
         for h in handlers:
