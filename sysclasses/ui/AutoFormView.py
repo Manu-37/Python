@@ -138,7 +138,6 @@ class AutoFormView(ctk.CTkFrame):
         self._fk_maps[col_name]         = {label: val_id for val_id, label in choix}
         self._fk_maps_reverse[col_name] = {val_id: label for val_id, label in choix}
 
-        #width = self.entity.TableMetadata.get_col_width(col_name)
         width = 400
         combo = ctk.CTkComboBox(
             self._scroll_frame,
@@ -215,19 +214,18 @@ class AutoFormView(ctk.CTkFrame):
             widget.configure(state="disabled")
 
     # --------------------------------------------------
-    # Sauvegarde
+    # Extraction écran → entité  (SANS sauvegarde)
     # --------------------------------------------------
-    def _save(self):
+    def _get_entity_from_screen(self):
         """
-        Collecte les valeurs du formulaire, les convertit et les stocke
-        dans l'entité via setattr.
+        Lit tous les widgets du formulaire et peuple self.entity en conséquence.
+        Même logique de filtrage que _save() :
+            - PK pure (non FK)         → ignorée, jamais écrite
+            - PK+FK en DELETE/DISPLAY  → ignorée, la ligne est déjà identifiée
 
-        Aucune validation ici — ctrl_valeurs() est appelé systématiquement
-        dans insert() et update() de clsEntity_ABS. C'est le seul juge de paix.
-
-        Deux niveaux de retour depuis insert()/update() :
-            ErreurValidationBloquante → rollback, on reste sur le formulaire
-            AvertissementValidation   → commit, on informe l'utilisateur et on ferme
+        N'appelle ni insert(), ni update(), ni ctrl_valeurs().
+        Peut être appelée indépendamment par _check() dans les vues filles
+        pour récupérer l'état courant de l'écran sans déclencher de CRUD.
         """
         metadata = self.entity.TableMetadata
 
@@ -238,9 +236,9 @@ class AutoFormView(ctk.CTkFrame):
             is_fk     = col_meta.get("is_fk", False)
 
             # PK pure (non FK) → jamais écrite, la DB la gère
-            # PK+FK en DELETE/DISPLAY → la ligne est identifiée, on ne retouche pas
             if is_pk and not is_fk:
                 continue
+            # PK+FK en DELETE/DISPLAY → la ligne est identifiée, on ne retouche pas
             if is_pk and is_fk and self.mode in ("DELETE", "DISPLAY"):
                 continue
 
@@ -260,7 +258,6 @@ class AutoFormView(ctk.CTkFrame):
                 value = widget.get()
 
             # Champ vide → None
-            # ctrl_valeurs() dans l'entité jugera si c'est acceptable ou non
             if value == "":
                 setattr(self.entity, column, None)
                 continue
@@ -275,9 +272,25 @@ class AutoFormView(ctk.CTkFrame):
 
             setattr(self.entity, column, value)
 
+    # --------------------------------------------------
+    # Sauvegarde
+    # --------------------------------------------------
+    def _save(self):
+        """
+        Peuple self.entity depuis l'écran via _get_entity_from_screen(),
+        puis exécute l'opération CRUD.
+
+        Aucune validation ici — ctrl_valeurs() est appelé systématiquement
+        dans insert() et update() de clsEntity_ABS. C'est le seul juge de paix.
+
+        Deux niveaux de retour depuis insert()/update() :
+            ErreurValidationBloquante → rollback, on reste sur le formulaire
+            AvertissementValidation   → commit, on informe l'utilisateur et on ferme
+        """
+        # Lecture écran → entité (extraction factorisée)
+        self._get_entity_from_screen()
+
         # --- Exécution CRUD ---
-        # ctrl_valeurs() est appelé dans insert()/update() — pas ici.
-        # _save() ne valide rien, il exécute et gère les exceptions.
         try:
             if self.mode == "INSERT":
                 self.entity.insert()
@@ -340,16 +353,14 @@ class AutoFormView(ctk.CTkFrame):
             self._frame_btn, text="Annuler", command=self._cancel
         ).pack(side="left", padx=5)
 
-        # 👇 HOOK (point d’extension)
+        # Hook (point d'extension)
         self._extend_buttons()
-    
+
     def _extend_buttons(self):
         """
         Hook pour ajouter des boutons personnalisés à la suite des boutons standards.
         Appelé à la fin de _build_buttons().
-            Permet d'ajouter des boutons spécifiques à certaines entités sans toucher à la logique de base du formulaire.
-            Exemple : un bouton "Tester la connexion" dans le formulaire de configuration de base de données.
-            À implémenter dans les sous-classes qui en ont besoin.
-            Par défaut, ne fait rien.
+        À implémenter dans les sous-classes qui en ont besoin.
+        Par défaut, ne fait rien.
         """
         pass

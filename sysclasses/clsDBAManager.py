@@ -35,7 +35,6 @@ class clsDBAManager:
         self._log         = clsLOG()
         self._connections = {}
 
-        # clsINISecurity remplace clsINIDBBaseRef
         self._security = clsINISecurity()
         self._crypto   = clsCrypto()
 
@@ -46,8 +45,6 @@ class clsDBAManager:
         db_p  = self._security.db_params
         ssh_p = self._security.ssh_params
 
-        # ssh_enabled est désormais dans ssh_params (clsINISecurity)
-        # et non plus dans env_params (clsINICommun)
         if not ssh_p.get('ssh_enabled'):
             ssh_p = None
         else:
@@ -105,15 +102,11 @@ class clsDBAManager:
             3. Si client_host == serveur_host → même machine → connexion directe
             4. Sinon → SSH si configuré dans NBE, connexion directe sinon
 
-        Hypothèse importante :
-            Les serveurs ont des IP fixes sur le réseau local.
-            Si un jour un applicatif Linux doit atteindre le MSSQL
-            sur le PC Windows, il faudra passer le PC en IP fixe.
-            Ce cas n'existe pas aujourd'hui — décision reportée volontairement.
-
         Paramètre :
             oNbe : instance de clsBAS_ENV_NBE — contient host, ssh_host,
                    ssh_enabled et tous les paramètres de connexion.
+                   Peut être un objet réel (chargé depuis la DB) ou un objet
+                   factice peuplé depuis l'écran (cas test_connection()).
 
         Retourne :
             dict ssh_params si tunnel nécessaire, None sinon.
@@ -121,9 +114,6 @@ class clsDBAManager:
         """
         client_host = self._get_client_host()
 
-        # L'IP du serveur "réel" à comparer avec le client :
-        # si SSH est configuré dans NBE, la passerelle SSH EST le serveur cible
-        # (c'est elle qu'on atteint en premier depuis le réseau)
         serveur_host = oNbe.nbe_ssh_host if oNbe.nbe_ssh_enabled else oNbe.nbe_host
 
         self._log.debug(
@@ -131,14 +121,12 @@ class clsDBAManager:
             f"ssh_configured={oNbe.nbe_ssh_enabled}"
         )
 
-        # Même machine → connexion directe, SSH inutile et contre-productif
         if client_host == serveur_host:
             self._log.debug(
                 "_resolve_ssh | client == serveur → connexion directe, SSH ignoré"
             )
             return None
 
-        # Machines différentes → SSH si configuré dans NBE
         if oNbe.nbe_ssh_enabled:
             self._log.debug(
                 "_resolve_ssh | client != serveur + SSH configuré → tunnel SSH établi"
@@ -147,15 +135,13 @@ class clsDBAManager:
             base_path = Path(self._config.env_params.get('path'))
 
             return {
-                'enabled':  True,
-                'host':     oNbe.nbe_ssh_host,
-                'port':     int(oNbe.nbe_ssh_port),
-                'user':     oNbe.nbe_ssh_user,
+                'enabled':      True,
+                'host':         oNbe.nbe_ssh_host,
+                'port':         int(oNbe.nbe_ssh_port),
+                'user':         oNbe.nbe_ssh_user,
                 'ssh_key_path': base_path / oNbe.nbe_ssh_key_path
             }
 
-        # Machines différentes mais SSH non configuré → connexion directe tentée
-        # (cas MSSQL local, réseau privé sans SSH, etc.)
         self._log.debug(
             "_resolve_ssh | client != serveur + SSH non configuré → connexion directe tentée"
         )
@@ -167,7 +153,7 @@ class clsDBAManager:
         - '__REGISTRY__' : toujours depuis le cache.
         - Autres noms   : résolution via les entités db_baseref si absent du cache.
         - env_type_test : paramètre optionnel pour forcer un type d'environnement spécifique
-                            lors de la résolution (utilisé uniquement par le bouton test de baseRef_Manager).
+                          lors de la résolution (utilisé uniquement par le bouton test de BaseRef_Manager).
         """
         if symbolique_name == '__REGISTRY__' and symbolique_name not in self._connections:
             raise RuntimeError(
@@ -179,10 +165,8 @@ class clsDBAManager:
 
         from db.db_baseref import clsENV, clsBAS, clsBAS_ENV_NBE
         if env_type_test:
-            print(f"DEBUG TYPE = '{env_type_test}'")
             env_type = env_type_test
         else:
-            print(f"DEBUG TYPE = '{self._config.env_params.get('type', '')}'")
             env_type = self._config.env_params.get('type', '')
         if not env_type:
             self._log.error("get_db : type d'environnement non défini dans la config.")
@@ -209,8 +193,6 @@ class clsDBAManager:
             'pwd':    oNbe.nbe_pwd
         }
 
-        # Résolution dynamique du tunnel SSH — voir _resolve_ssh() pour
-        # l'explication complète de la logique
         ssh_p = self._resolve_ssh(oNbe)
 
         engine = clsSQL_Postgre(self._log)
@@ -222,6 +204,59 @@ class clsDBAManager:
         except Exception as e:
             self._log.error(f"Échec connexion '{symbolique_name}' : {e}")
             return None
+
+    def test_connection(self, oNbe) -> dict:
+        """
+        Teste une connexion de manière éphémère — sans inscription au pool.
+
+        Paramètre :
+            oNbe : instance de clsBAS_ENV_NBE peuplée depuis l'écran.
+                   Même interface qu'un objet réel — _resolve_ssh() s'applique
+                   sans modification, y compris la comparaison IP client/serveur.
+
+        Comportement :
+            - Emprunte exactement le même chemin que get_db() :
+              résolution SSH via _resolve_ssh(), puis connect_with_tunnel().
+            - La connexion est fermée dans tous les cas (succès ou échec)
+              via un bloc finally — jamais enregistrée dans self._connections.
+
+        Retourne :
+            {"succes": True}
+            {"succes": False, "erreur": "message lisible"}
+        """
+        db_p = {
+            'host':   oNbe.nbe_host,
+            'port':   int(oNbe.nbe_port),
+            'dbname': oNbe.nbe_db_name,
+            'user':   oNbe.nbe_user,
+            'pwd':    oNbe.nbe_pwd
+        }
+
+        # _resolve_ssh() applique la logique complète :
+        # comparaison IP client/serveur, SSH ignoré si même machine.
+        # oNbe est un objet factice peuplé depuis l'écran — _resolve_ssh()
+        # ne sait pas (et n'a pas besoin de savoir) d'où viennent les valeurs.
+        ssh_p = self._resolve_ssh(oNbe)
+
+        engine = clsSQL_Postgre(self._log)
+        try:
+            engine.connect_with_tunnel(db_p, ssh_p)
+            self._log.info(
+                f"test_connection | Succès — {oNbe.nbe_host}:{oNbe.nbe_port}/{oNbe.nbe_db_name}"
+            )
+            return {"succes": True}
+
+        except Exception as e:
+            msg = str(e)
+            self._log.warning(f"test_connection | Échec — {msg}")
+            return {"succes": False, "erreur": msg}
+
+        finally:
+            # Déconnexion systématique — tunnel SSH compris si ouvert
+            try:
+                engine.disconnect()
+            except Exception:
+                pass
 
     def close_all(self):
         """Ferme toutes les connexions actives."""
