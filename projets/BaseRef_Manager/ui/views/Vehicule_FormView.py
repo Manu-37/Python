@@ -12,10 +12,12 @@ class Vehicule_FormView(AutoFormView):
     Formulaire spécifique pour la table Véhicules Tesla.
 
     Extension par rapport à AutoFormView :
-        - Bouton "Récupérer les données" présent dans tous les modes,
-          grisé en INSERT (pas de token associé à un véhicule non encore créé).
-        - _check() : délègue entièrement à clsTeslaVehicle.save_snapshot(),
-          affiche le résultat via une fenêtre dédiée avec lien cliquable.
+        - Bouton "Récupérer les données" — grisé en INSERT.
+        - _after_save() : après chaque enregistrement réussi en admin,
+          le véhicule est immédiatement répercuté dans db_tstat_data.
+          En cas d'échec de la partie data, un message explicite est affiché
+          mais l'opération admin reste commitée (risque accepté — même serveur).
+        - _check() : délègue à clsTeslaVehicle.save_snapshot().
     """
 
     def __init__(self, parent, entity_instance, mode, ui_colors=None):
@@ -42,6 +44,77 @@ class Vehicule_FormView(AutoFormView):
             self._btn_recuperer.configure(state="disabled")
 
     # --------------------------------------------------
+    # Hook après sauvegarde — synchronisation automatique
+    # --------------------------------------------------
+
+    def _after_save(self):
+        """
+        Appelé automatiquement par AutoFormView._save() après chaque
+        opération CRUD réussie et commitée en admin.
+
+        Répercute le véhicule concerné dans db_tstat_data :
+            - INSERT si le véhicule est nouveau dans data
+            - UPDATE si le véhicule existe déjà dans data
+            - En cas de DELETE en admin → veh_isactive = False dans data
+              (jamais de DELETE réel — l'historique des snapshots est préservé)
+
+        Le commit data est réalisé ici.
+        En cas d'échec, un message explicite est affiché — l'admin reste intact.
+        """
+        self._sync_un(self.entity)
+
+    def _sync_un(self, oAdmin):
+        """
+        Synchronise un véhicule depuis db_tstat_admin vers db_tstat_data.
+
+        Paramètre :
+            oAdmin : instance clsVEH (admin) avec veh_id valide.
+
+        Comportement selon le mode :
+            INSERT / UPDATE : INSERT ou UPDATE dans data selon existence
+            DELETE          : passe veh_isactive = False dans data
+        """
+        from db.db_tstat_data.public.clsVEH import clsVEH as clsVEH_Data
+
+        try:
+            oData = clsVEH_Data(veh_id=oAdmin.veh_id)
+
+            if self.mode == "DELETE":
+                # Suppression admin → désactivation dans data (historique préservé)
+                if oData.veh_id is not None:
+                    oData.veh_isactive = False
+                    oData.update()
+                # Si absent de data, rien à faire
+            else:
+                if oData.veh_id is None:
+                    # Nouveau véhicule → INSERT dans data
+                    oData.veh_id              = oAdmin.veh_id
+                    oData.veh_vin             = oAdmin.veh_vin
+                    oData.veh_displayname     = oAdmin.veh_displayname
+                    oData.veh_pollinginterval = oAdmin.veh_pollinginterval
+                    oData.veh_isactive        = oAdmin.veh_isactive
+                    oData.insert()
+                else:
+                    # Véhicule existant → UPDATE dans data
+                    oData.veh_vin             = oAdmin.veh_vin
+                    oData.veh_displayname     = oAdmin.veh_displayname
+                    oData.veh_pollinginterval = oAdmin.veh_pollinginterval
+                    oData.veh_isactive        = oAdmin.veh_isactive
+                    oData.update()
+
+            oData.ogEngine.commit()
+
+        except Exception as e:
+            msg = (
+                f"Le véhicule a été enregistré dans db_tstat_admin "
+                f"mais la synchronisation vers db_tstat_data a échoué.\n\n"
+                f"Utilisez le bouton 'Synchroniser' depuis la liste pour corriger.\n\n"
+                f"Détail : {e}"
+            )
+            self._log.error(f"Vehicule_FormView._sync_un | {msg}")
+            MessageDialog.error(self, "Synchronisation data", msg)
+
+    # --------------------------------------------------
     # Action — délègue tout à la couche métier
     # --------------------------------------------------
 
@@ -49,7 +122,6 @@ class Vehicule_FormView(AutoFormView):
         """
         Déclenche la récupération et la sauvegarde du snapshot Tesla.
         Toute la logique métier est dans clsTeslaVehicle.save_snapshot().
-        Cette méthode ne fait que piloter l'UI : appel → résultat → affichage.
         """
         veh_vin = self.entity.veh_vin
 
@@ -90,17 +162,12 @@ class Vehicule_FormView(AutoFormView):
     # --------------------------------------------------
 
     def _afficher_succes(self, chemin: Path):
-        """
-        Affiche une fenêtre modale avec le nom du fichier créé.
-        Le lien est cliquable — ouvre le fichier dans l'explorateur Windows.
-        """
         dlg = ctk.CTkToplevel(self)
         dlg.title("Données récupérées")
         dlg.resizable(False, False)
         dlg.transient(self)
         dlg.grab_set()
 
-        # Centrage sur la fenêtre parente
         dlg.update_idletasks()
         top = self.winfo_toplevel()
         x = top.winfo_rootx() + (top.winfo_width()  - 480) // 2
@@ -115,7 +182,6 @@ class Vehicule_FormView(AutoFormView):
             font=ctk.CTkFont(size=13)
         ).grid(row=0, column=0, padx=20, pady=(20, 6))
 
-        # Lien cliquable — underline simulé via la couleur et le curseur
         lbl_lien = ctk.CTkLabel(
             dlg,
             text=chemin.name,
@@ -125,7 +191,6 @@ class Vehicule_FormView(AutoFormView):
         )
         lbl_lien.grid(row=1, column=0, padx=20, pady=(0, 6))
 
-        # Clic → ouvre l'explorateur Windows positionné sur le fichier
         lbl_lien.bind(
             "<Button-1>",
             lambda e: os.startfile(chemin.parent)

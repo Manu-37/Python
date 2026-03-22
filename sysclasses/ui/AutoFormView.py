@@ -13,14 +13,12 @@ class AutoFormView(ctk.CTkFrame):
         self.mode     = mode.upper()
         self.on_done  = None
         self._fields_widgets  = {}
-        # Pour chaque colonne FK : {col_name: {label: id}}  → utilisé dans _save
         self._fk_maps         = {}
-        # Inverse  : {col_name: {id: label}}                → utilisé dans _load_values
         self._fk_maps_reverse = {}
 
-        self.grid_rowconfigure(0, weight=0)   # titre
-        self.grid_rowconfigure(1, weight=1)   # zone scrollable
-        self.grid_rowconfigure(2, weight=0)   # boutons
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=0)
         self.grid_columnconfigure(0, weight=1)
 
         self._build_title()
@@ -51,21 +49,16 @@ class AutoFormView(ctk.CTkFrame):
         lbl.grid(row=0, column=0, pady=(10, 5), sticky="ew")
 
     # --------------------------------------------------
-    # Zone scrollable — contient le formulaire
+    # Zone scrollable
     # --------------------------------------------------
     def _build_scroll_zone(self):
-        """
-        CTkScrollableFrame : fournit un ascenseur vertical automatique
-        quand le nombre de champs dépasse la hauteur disponible.
-        Le formulaire est construit à l'intérieur de ce frame.
-        """
         self._scroll_frame = ctk.CTkScrollableFrame(self)
         self._scroll_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self._scroll_frame.grid_columnconfigure(0, weight=0)
         self._scroll_frame.grid_columnconfigure(1, weight=0)
 
     # --------------------------------------------------
-    # Construction du formulaire (dans le scroll frame)
+    # Construction du formulaire
     # --------------------------------------------------
     def _build_form(self):
         metadata = self.entity.TableMetadata
@@ -81,7 +74,6 @@ class AutoFormView(ctk.CTkFrame):
             )
             lbl.grid(row=row, column=0, padx=10, pady=5, sticky="w")
 
-            # FK → ComboBox, sinon widget standard
             if col_meta.get("is_fk"):
                 widget = self._create_combo_fk(column)
             else:
@@ -89,10 +81,6 @@ class AutoFormView(ctk.CTkFrame):
 
             widget.grid(row=row, column=1, padx=10, pady=5, sticky="w")
 
-            # Règle de grisage :
-            # - is_identity              → toujours grisé (valeur générée par la DB)
-            # - is_pk sans is_fk         → toujours grisé (PK technique pure)
-            # - is_pk ET is_fk           → actif en INSERT et UPDATE, grisé en DELETE/DISPLAY
             is_pk       = col_meta["is_pk"]
             is_fk       = col_meta.get("is_fk", False)
             is_identity = col_meta["is_identity"]
@@ -110,7 +98,7 @@ class AutoFormView(ctk.CTkFrame):
             row += 1
 
     # --------------------------------------------------
-    # Lecture seule visuelle (grisé)
+    # Lecture seule visuelle
     # --------------------------------------------------
     def _make_readonly(self, widget):
         if isinstance(widget, ctk.CTkComboBox):
@@ -128,10 +116,6 @@ class AutoFormView(ctk.CTkFrame):
     # ComboBox FK
     # --------------------------------------------------
     def _create_combo_fk(self, col_name: str) -> ctk.CTkComboBox:
-        """
-        Crée un CTkComboBox alimenté depuis la table liée.
-        Appelle entity.get_list_FK() → [(id, "label"), ...]
-        """
         choix  = self.entity.get_list_FK(col_name)
         labels = [label for _, label in choix]
 
@@ -192,7 +176,6 @@ class AutoFormView(ctk.CTkFrame):
             canonical= col_meta["canonical_type"]
             family   = canonical[0] if isinstance(canonical, tuple) else "STRING"
 
-            # --- FK : traduire l'id stocké en label affiché ---
             if col_meta.get("is_fk"):
                 label = self._fk_maps_reverse.get(column, {}).get(value, "")
                 widget.set(label)
@@ -214,19 +197,9 @@ class AutoFormView(ctk.CTkFrame):
             widget.configure(state="disabled")
 
     # --------------------------------------------------
-    # Extraction écran → entité  (SANS sauvegarde)
+    # Extraction écran → entité (SANS sauvegarde)
     # --------------------------------------------------
     def _get_entity_from_screen(self):
-        """
-        Lit tous les widgets du formulaire et peuple self.entity en conséquence.
-        Même logique de filtrage que _save() :
-            - PK pure (non FK)         → ignorée, jamais écrite
-            - PK+FK en DELETE/DISPLAY  → ignorée, la ligne est déjà identifiée
-
-        N'appelle ni insert(), ni update(), ni ctrl_valeurs().
-        Peut être appelée indépendamment par _check() dans les vues filles
-        pour récupérer l'état courant de l'écran sans déclencher de CRUD.
-        """
         metadata = self.entity.TableMetadata
 
         for column, widget in self._fields_widgets.items():
@@ -235,17 +208,14 @@ class AutoFormView(ctk.CTkFrame):
             is_pk     = col_meta["is_pk"]
             is_fk     = col_meta.get("is_fk", False)
 
-            # PK pure (non FK) → jamais écrite, la DB la gère
             if is_pk and not is_fk:
                 continue
-            # PK+FK en DELETE/DISPLAY → la ligne est identifiée, on ne retouche pas
             if is_pk and is_fk and self.mode in ("DELETE", "DISPLAY"):
                 continue
 
             canonical = col_meta["canonical_type"]
             family    = canonical[0] if isinstance(canonical, tuple) else "STRING"
 
-            # --- FK : traduire le label sélectionné en id ---
             if is_fk:
                 label_sel = widget.get()
                 setattr(self.entity, column,
@@ -257,12 +227,10 @@ class AutoFormView(ctk.CTkFrame):
             else:
                 value = widget.get()
 
-            # Champ vide → None
             if value == "":
                 setattr(self.entity, column, None)
                 continue
 
-            # Conversion de type selon la famille canonique
             if family == "NUMERIC":
                 sub_type = col_meta["canonical_type"][1] if isinstance(col_meta["canonical_type"], tuple) else ""
                 try:
@@ -273,24 +241,36 @@ class AutoFormView(ctk.CTkFrame):
             setattr(self.entity, column, value)
 
     # --------------------------------------------------
+    # Hooks avant / après sauvegarde
+    # --------------------------------------------------
+    def _before_save(self):
+        """
+        Hook appelé après _get_entity_from_screen() et avant l'opération CRUD.
+        self.entity est peuplé depuis l'écran — disponible et exploitable.
+        À implémenter dans les sous-classes qui en ont besoin.
+        Par défaut, ne fait rien.
+        """
+        pass
+
+    def _after_save(self):
+        """
+        Hook appelé après l'opération CRUD réussie et le commit().
+        À implémenter dans les sous-classes qui en ont besoin.
+        Par défaut, ne fait rien.
+        """
+        pass
+
+    # --------------------------------------------------
     # Sauvegarde
     # --------------------------------------------------
     def _save(self):
-        """
-        Peuple self.entity depuis l'écran via _get_entity_from_screen(),
-        puis exécute l'opération CRUD.
-
-        Aucune validation ici — ctrl_valeurs() est appelé systématiquement
-        dans insert() et update() de clsEntity_ABS. C'est le seul juge de paix.
-
-        Deux niveaux de retour depuis insert()/update() :
-            ErreurValidationBloquante → rollback, on reste sur le formulaire
-            AvertissementValidation   → commit, on informe l'utilisateur et on ferme
-        """
-        # Lecture écran → entité (extraction factorisée)
+        # Étape 1 — Lecture écran → entité
         self._get_entity_from_screen()
 
-        # --- Exécution CRUD ---
+        # Étape 2 — Hook avant (entity peuplée, pas encore en base)
+        self._before_save()
+
+        # Étape 3 — Exécution CRUD
         try:
             if self.mode == "INSERT":
                 self.entity.insert()
@@ -308,16 +288,11 @@ class AutoFormView(ctk.CTkFrame):
             self.entity.ogEngine.commit()
 
         except ErreurValidationBloquante as e:
-            # Erreur fatale — INSERT/UPDATE interdit
-            # On ne commit pas, on reste sur le formulaire
             self.entity.ogEngine.rollback()
             MessageDialog.error(self, "Erreur de validation", str(e))
             return
 
         except AvertissementValidation as e:
-            # Avertissement non bloquant — données enregistrées
-            # Le commit a déjà eu lieu avant la levée de l'exception
-            # dans insert()/update() — on informe et on ferme
             self.entity.ogEngine.commit()
             MessageDialog.warning(self, "Avertissement",
                                   f"Enregistrement effectué avec des avertissements :\n{str(e)}")
@@ -326,6 +301,9 @@ class AutoFormView(ctk.CTkFrame):
             self.entity.ogEngine.rollback()
             MessageDialog.error(self, "Erreur", f"Échec de l'opération :\n{e}")
             return
+
+        # Étape 4 — Hook après (opération commitée avec succès)
+        self._after_save()
 
         if self.on_done:
             self.on_done()
@@ -338,7 +316,7 @@ class AutoFormView(ctk.CTkFrame):
         self.destroy()
 
     # --------------------------------------------------
-    # Boutons (ancrés en bas, hors du scroll)
+    # Boutons
     # --------------------------------------------------
     def _build_buttons(self):
         self._frame_btn = ctk.CTkFrame(self)
@@ -353,7 +331,6 @@ class AutoFormView(ctk.CTkFrame):
             self._frame_btn, text="Annuler", command=self._cancel
         ).pack(side="left", padx=5)
 
-        # Hook (point d'extension)
         self._extend_buttons()
 
     def _extend_buttons(self):

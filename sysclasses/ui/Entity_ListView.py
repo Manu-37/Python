@@ -40,25 +40,16 @@ class Entity_ListView(ctk.CTkFrame):
         self._build_form_container()
         self._load_data()
 
-        # Positionner le splitter une fois que Tk a calculé les tailles réelles.
-        # after(100) = dans 100 ms, après le premier cycle de rendu complet.
-        # Sans ce délai, winfo_height() retourne 1 et sash_place ne fait rien.
         self.after(100, self._set_initial_sash)
 
     # --------------------------
     # Layout principal
     # --------------------------
     def _build_layout(self):
-        # Row 0 → toolbar  (fixe, hors PanedWindow)
-        # Row 1 → PanedWindow (extensible, contient liste + fiche)
         self.grid_rowconfigure(0, weight=0)
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
-        # PanedWindow vertical natif Tk — la barre est draggable par l'utilisateur.
-        # sashrelief=RAISED  : barre légèrement en relief, visible sans être agressive
-        # sashwidth=6        : largeur de la zone cliquable en pixels
-        # sashpad=2          : espace de chaque côté de la barre
         self.paned = tk.PanedWindow(
             self,
             orient=tk.VERTICAL,
@@ -68,11 +59,9 @@ class Entity_ListView(ctk.CTkFrame):
         )
         self.paned.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
 
-        # Panneau haut : toolbar + DataGrid
         self.frame_liste = tk.Frame(self.paned)
         self.paned.add(self.frame_liste, stretch="always")
 
-        # Panneau bas : formulaire
         self.frame_fiche = tk.Frame(self.paned)
         self.paned.add(self.frame_fiche, stretch="always")
 
@@ -80,37 +69,38 @@ class Entity_ListView(ctk.CTkFrame):
     # Position initiale du splitter
     # --------------------------
     def _set_initial_sash(self):
-        """
-        Place le splitter à 40 % de la hauteur totale du PanedWindow.
-        sash_place(index, x, y) :
-          - index = 0 → premier (et unique) sash entre les deux panneaux
-          - x     = 0 → horizontal ignoré en orientation verticale
-          - y     = position en pixels depuis le haut du PanedWindow
-        """
         hauteur_totale = self.paned.winfo_height()
-        if hauteur_totale > 1:                          # protection si fenêtre pas encore visible
+        if hauteur_totale > 1:
             self.paned.sash_place(0, 0, int(hauteur_totale * 0.40))
 
     # --------------------------
     # Toolbar CRUD
     # --------------------------
     def _build_toolbar(self):
-        # La toolbar reste dans le CTkFrame principal (self), row 0 — hors du PanedWindow.
-        # Elle garde sa hauteur fixe quoi que l'utilisateur fasse avec le splitter.
-        toolbar = ctk.CTkFrame(self)
-        toolbar.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+        self.toolbar = ctk.CTkFrame(self)
+        self.toolbar.grid(row=0, column=0, sticky="w", padx=10, pady=10)
 
-        ctk.CTkButton(toolbar, text="Ajouter",   command=self._ajouter).pack(side="left", padx=5)
-        ctk.CTkButton(toolbar, text="Modifier",  command=self._modifier).pack(side="left", padx=5)
-        ctk.CTkButton(toolbar, text="Supprimer", command=self._supprimer).pack(side="left", padx=5)
-        ctk.CTkButton(toolbar, text="Consulter", command=self._consulter).pack(side="left", padx=5)
+        ctk.CTkButton(self.toolbar, text="Ajouter",   command=self._ajouter).pack(side="left", padx=5)
+        ctk.CTkButton(self.toolbar, text="Modifier",  command=self._modifier).pack(side="left", padx=5)
+        ctk.CTkButton(self.toolbar, text="Supprimer", command=self._supprimer).pack(side="left", padx=5)
+        ctk.CTkButton(self.toolbar, text="Consulter", command=self._consulter).pack(side="left", padx=5)
+
+        # Hook — point d'extension pour boutons spécifiques
+        self._extend_toolbar()
+
+    def _extend_toolbar(self):
+        """
+        Hook pour ajouter des boutons personnalisés à la suite des boutons standards.
+        Appelé à la fin de _build_toolbar().
+        À implémenter dans les sous-classes qui en ont besoin.
+        Par défaut, ne fait rien.
+        """
+        pass
 
     # --------------------------
     # DataGrid
     # --------------------------
     def _build_grid(self):
-        # La DataGrid est maintenant enfant de frame_liste (panneau haut du PanedWindow).
-        # On configure frame_liste pour que la DataGrid prenne tout l'espace disponible.
         self.frame_liste.grid_rowconfigure(0, weight=1)
         self.frame_liste.grid_columnconfigure(0, weight=1)
 
@@ -131,8 +121,6 @@ class Entity_ListView(ctk.CTkFrame):
     # Zone formulaire
     # --------------------------
     def _build_form_container(self):
-        # Le formulaire occupe tout le panneau bas du PanedWindow.
-        # Pas de séparateur CTk ici — la barre du PanedWindow joue ce rôle.
         self.frame_fiche.grid_rowconfigure(0, weight=1)
         self.frame_fiche.grid_columnconfigure(0, weight=1)
 
@@ -143,11 +131,6 @@ class Entity_ListView(ctk.CTkFrame):
     # Chargement des données
     # --------------------------
     def _load_data(self):
-        """
-        Appelle load_all() sur la classe entité et alimente la DataGrid.
-        load_all() est défini dans clsEntity_ABS et utilise cls._DB_SYMBOLIC_NAME
-        pour résoudre la connexion via clsDBAManager.
-        """
         data = self.entity_class.load_all(order_by=self.order_by)
         self.data_grid.set_data(data)
         self.selected_row = None
