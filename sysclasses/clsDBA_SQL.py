@@ -36,12 +36,12 @@ class clsDBA_SQL(clsDBA_ABS):
                 mypkey = None
 
                 # Support des formats Ed25519 et RSA (Paramiko 2.12)
-                for key_class in [paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey]:
+                for key_class in [paramiko.Ed25519Key, paramiko.RSAKey]:
                     try:
                         key_stream.seek(0)
                         mypkey = key_class.from_private_key(key_stream)
                         if mypkey: break
-                    except Exception: continue
+                    except (ValueError, paramiko.SSHException): continue
 
                 if not mypkey:
                     raise ValueError("Clé privée non reconnue ou format invalide.")
