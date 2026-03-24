@@ -43,7 +43,7 @@ class clsLOG:
         self._initialized = True
 
         self.log_params = config_inst.log_params
-        self._env_type  = config_inst.env_params.get('TYPE', '').upper()
+        self._env_type  = config_inst.env_params.get('type', '').upper()
 
         self._project_name  = get_projet_nom()
         self._version       = get_projet_ver()
@@ -114,6 +114,7 @@ class clsLOG:
             2. clsEmailManager est déjà initialisé (singleton disponible)
         Si l'une ou l'autre condition n'est pas remplie, on passe silencieusement.
         """
+        self._log.info(f"clsLOG | _envoyer_alerte_critique | env_type='{self._env_type}'")
         if self._env_type != 'PROD':
             return
         try:
