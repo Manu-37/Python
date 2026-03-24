@@ -143,7 +143,7 @@ def _traiter_vehicule(veh: dict, params: dict, log) -> None:
                 f"snapshot enregistré (snp_id={resultat['snp_id']})"
             )
         else:
-            log.critical(
+            log.info(
                 f"tstat_collecteur | {veh_nom} — "
                 f"échec collecte : {resultat.get('erreur')}"
             )
