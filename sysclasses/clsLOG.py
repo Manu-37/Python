@@ -114,7 +114,7 @@ class clsLOG:
             2. clsEmailManager est déjà initialisé (singleton disponible)
         Si l'une ou l'autre condition n'est pas remplie, on passe silencieusement.
         """
-        self.info(f"clsLOG | _envoyer_alerte_critique | env_type='{self._env_type}'")
+        self.debug(f"clsLOG | _envoyer_alerte_critique | env_type='{self._env_type}'")
         if self._env_type != 'PROD':
             return
         try:
