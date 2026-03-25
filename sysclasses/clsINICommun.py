@@ -22,6 +22,11 @@ class clsINICommun(clsINI):
         - [EMAIL_*]       : profils d'envoi email
 
     Les paramètres sensibles (connexion DB, clé Fernet) sont dans clsINIDBBaseRef.
+
+    Résolution du chemin 'folder' dans [LOG] :
+        DEFAULT  → get_python_dir() / 'logs'
+        absolu   → utilisé tel quel
+        relatif  → résolu depuis le dossier du fichier .ini
     """
 
     _instance    = None
@@ -56,13 +61,28 @@ class clsINICommun(clsINI):
 
     @property
     def log_params(self) -> dict:
-        """Récupère tout LOG et résout le chemin du dossier."""
+        """
+        Récupère tout LOG et livre un dictionnaire directement exploitable.
+
+        Résolution de 'folder' :
+            DEFAULT  → get_python_dir() / 'logs'  (dossier logs commun à la racine Python)
+            absolu   → utilisé tel quel
+            relatif  → résolu depuis le dossier du fichier .ini
+
+        Conversions numériques : level, max_bytes, backup_count, retention_days.
+        """
         d = self.get_section("LOG")
         if 'folder' in d:
-            p = Path(d['folder'])
-            if not p.is_absolute():
-                d['folder'] = str((Path(self._filename).parent / p).resolve())
-        for key in ['level', 'max_bytes', 'backup_count']:
+            raw = d['folder'].strip()
+            if raw.upper() == 'DEFAULT':
+                from sysclasses.cste_chemins import get_python_dir
+                d['folder'] = str(get_python_dir() / 'logs')
+            else:
+                p = Path(raw)
+                if not p.is_absolute():
+                    d['folder'] = str((Path(self._filename).parent / p).resolve())
+                # absolu → on laisse tel quel, rien à faire
+        for key in ['level', 'max_bytes', 'backup_count', 'retention_days']:
             if key in d:
                 d[key] = int(d[key])
         return d
