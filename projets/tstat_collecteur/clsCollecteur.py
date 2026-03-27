@@ -8,6 +8,7 @@ Responsabilité :
     - Collecter les données uniquement si le véhicule est online de lui-même
     - Mapper la réponse vers clsSNP, clsCHG, clsDRV
     - Persister en base dans une transaction unique
+    - Déclencher le REFRESH de mv_charge_sessions sur transition Complete/Stopped
     - Gérer les retries si la fréquence le permet
     - Comptabiliser les échecs consécutifs et alerter
 
@@ -51,6 +52,12 @@ from db.db_tstat_data.public.clsVEH  import clsVEH as clsVEH_Data
 ETATS_BRANCHE = ("Charging", "Complete", "Stopped", "NoPower")
 
 # --------------------------------------------------
+# États qui déclenchent le REFRESH de mv_charge_sessions.
+# La session est terminée → données stables → on recalcule la vue.
+# --------------------------------------------------
+ETATS_FIN_SESSION = ("Complete", "Stopped")
+
+# --------------------------------------------------
 # Seul état qui autorise la collecte de données
 # --------------------------------------------------
 ETAT_ONLINE = "online"
@@ -90,8 +97,6 @@ class clsCollecteur:
             )
 
         # Initialisation de l'authentification Tesla
-        # clsTeslaAuth charge les tokens depuis db_tstat_admin.t_teslatoken_ttk
-        # Le veh_id dans db_tstat_admin est garanti identique (synchronisation)
         self._auth    = clsTeslaAuth(veh_id=veh_id)
         self._vehicle = clsTeslaVehicle(self._auth)
 
@@ -108,26 +113,15 @@ class clsCollecteur:
         """
         Exécute un cycle de collecte complet.
 
-        Paramètres :
-            freq_retry_active : si True et véhicule online, retente N fois
-                                en cas d'échec réseau de get_vehicle_data().
-                                Fourni par clsFrequenceManager.freq_retry_active.
-                                N'a aucun effet si le véhicule n'est pas online.
-
         Retourne :
             {"succes": True,  "snp_id": int}
             {"succes": False, "erreur": "message"}
         """
-        # --- Vérification état + collecte si online ---
         donnees = self._appeler_tesla_avec_retry(freq_retry_active)
 
         if donnees is None:
-            # Deux cas normaux possibles :
-            #   - Véhicule non online (asleep / offline) → comportement attendu
-            #   - Échec réseau après tous les essais → compteur d'échecs incrémenté
             return {"succes": False, "erreur": "Véhicule non online ou injoignable."}
 
-        # --- Persistance en base ---
         try:
             snp_id = self._persister(donnees)
             self._log.info(f"clsCollecteur | Snapshot enregistré — snp_id={snp_id}")
@@ -151,14 +145,6 @@ class clsCollecteur:
             Étape 2 : si online seulement → collecter les données complètes.
                       si asleep ou offline → sortir immédiatement, rien faire.
 
-            "asleep"  : modem en veille basse conso. Un wake_up() le réveillerait
-                        et consommerait du crédit Tesla. On ne le fait PAS.
-            "offline" : modem éteint ou hors réseau. Un wake_up() échouerait
-                        et risquerait quand même de consommer du crédit. On ne le fait PAS.
-
-            Le retry ne sert qu'à gérer les aléas réseau quand le véhicule
-            est déjà online. Il ne sert PAS à insister sur un véhicule endormi.
-
         Retourne :
             dict  : données Tesla complètes si collecte réussie
             None  : véhicule non online OU échec réseau après tous les essais
@@ -167,12 +153,9 @@ class clsCollecteur:
         delai         = self._params["retry_delai"]
 
         # --- Étape 1 : vérifier l'état SANS réveiller ---
-        # GET /api/1/vehicles/{id} — endpoint sommaire, ne réveille pas le véhicule.
-        # Interroge le serveur Tesla, pas le véhicule directement.
         etat = self._get_etat_sans_reveil()
 
         if etat is None:
-            # L'endpoint d'état est lui-même injoignable — problème réseau ou token
             self._log.warning(
                 "clsCollecteur | Impossible de vérifier l'état du véhicule — "
                 "API injoignable. Collecte annulée."
@@ -181,8 +164,6 @@ class clsCollecteur:
             return None
 
         if etat != ETAT_ONLINE:
-            # Véhicule non online — on sort proprement sans comptabiliser d'échec
-            # car c'est un comportement tout à fait normal (voiture qui dort).
             self._log.info(
                 f"clsCollecteur | Véhicule '{etat}' — "
                 "pas de collecte, pas de réveil. Comportement normal."
@@ -190,7 +171,6 @@ class clsCollecteur:
             return None
 
         # --- Étape 2 : véhicule online → collecter les données complètes ---
-        # On n'arrive ici QUE si le véhicule est déjà online de lui-même.
         self._log.info(
             f"clsCollecteur | Véhicule online — démarrage collecte "
             f"(retry={'actif' if freq_retry_active else 'inactif'})."
@@ -218,8 +198,6 @@ class clsCollecteur:
                 )
                 time.sleep(delai)
 
-        # Tous les essais ont échoué alors que le véhicule était online —
-        # c'est un vrai problème réseau ou API, pas un état normal.
         self._log.error(
             f"clsCollecteur | Échec après {nb_tentatives} tentative(s) "
             "— véhicule online mais données inaccessibles."
@@ -236,18 +214,12 @@ class clsCollecteur:
         Cet endpoint interroge le serveur Tesla, pas le véhicule directement —
         il ne provoque donc aucun réveil, aucun coût.
 
-        La résolution du vehicle_id Tesla depuis le VIN passe par
-        GET /api/1/vehicles (liste des véhicules du compte) — également
-        sans réveil.
-
         Retourne :
             "online"  : véhicule actif, collecte possible
             "asleep"  : véhicule en veille — NE PAS RÉVEILLER
             "offline" : véhicule hors réseau — NE PAS RÉVEILLER
             None      : échec de l'appel API (réseau, token invalide...)
         """
-        # Résolution du vehicle_id Tesla depuis le VIN
-        # GET /api/1/vehicles — liste les véhicules du compte, ne réveille pas
         res_id = self._vehicle._resolve_vehicle_id(self._oVEH.veh_vin)
 
         if res_id["erreur"]:
@@ -257,8 +229,6 @@ class clsCollecteur:
             )
             return None
 
-        # Appel de l'endpoint sommaire — ne réveille pas le véhicule
-        # GET /api/1/vehicles/{id} — retourne state sans perturber le véhicule
         etat = self._vehicle._get_vehicle_state(res_id["data"])
 
         if etat["erreur"]:
@@ -275,15 +245,7 @@ class clsCollecteur:
     def _appeler_par_vin(self) -> dict:
         """
         Appelle get_vehicle_data() avec le vehicle_id Tesla résolu depuis le VIN.
-
-        Appelé UNIQUEMENT si le véhicule est déjà online (_get_etat_sans_reveil
-        a retourné "online"). Dans ce contexte, get_vehicle_data() ne devrait
-        pas avoir besoin de wake_up() — le véhicule répond directement.
-
-        Si malgré tout get_vehicle_data() échoue (le véhicule s'est rendormi
-        dans l'intervalle), l'erreur remonte proprement sans tentative de réveil.
-
-        Retourne le dict standard {"erreur": ..., "data": ...}.
+        Appelé UNIQUEMENT si le véhicule est déjà online.
         """
         res_id = self._vehicle._resolve_vehicle_id(self._oVEH.veh_vin)
 
@@ -293,7 +255,7 @@ class clsCollecteur:
         return self._vehicle.get_vehicle_data(res_id["data"])
 
     # --------------------------------------------------
-    # Persistance SNP + CHG + DRV
+    # Persistance SNP + CHG + DRV + REFRESH vue
     # --------------------------------------------------
 
     def _persister(self, donnees: dict) -> int:
@@ -301,21 +263,26 @@ class clsCollecteur:
         Mappe les données Tesla vers SNP, CHG (si branché), DRV (si en conduite),
         puis insère dans db_tstat_data en une transaction unique.
 
-        Retourne le snp_id généré.
-        Le commit est effectué ici — cohérent avec la règle :
-        commit() au niveau de l'appelant de la couche SQL,
-        clsCollecteur est l'orchestrateur de cette transaction.
-        """
-        # --- Snapshot (SNP) ---
-        oSNP = self._mapper_snp(donnees)
-        oSNP.insert()
-        # snp_id est hydraté par RETURNING après l'insert
-        snp_id = oSNP.snp_id
+        Après le commit, si l'état de charge indique une fin de session
+        (Complete ou Stopped), déclenche le REFRESH MATERIALIZED VIEW CONCURRENTLY
+        de mv_charge_sessions.
 
-        # --- Données de charge (CHG) — uniquement si branché ---
+        Le REFRESH est exécuté APRÈS le commit car :
+            - PostgreSQL interdit REFRESH dans une transaction avec d'autres DML.
+            - Les données insérées doivent être visibles avant le recalcul.
+            - CONCURRENTLY évite de locker la vue — le dashboard reste lisible.
+
+        Retourne le snp_id généré.
+        """
         charge_state = donnees.get("charge_state", {})
         etat_charge  = charge_state.get("charging_state", "Disconnected")
 
+        # --- Snapshot (SNP) ---
+        oSNP = self._mapper_snp(donnees)
+        oSNP.insert()
+        snp_id = oSNP.snp_id
+
+        # --- Données de charge (CHG) — uniquement si branché ---
         if etat_charge in ETATS_BRANCHE:
             oCHG = self._mapper_chg(snp_id, charge_state)
             oCHG.insert()
@@ -331,7 +298,38 @@ class clsCollecteur:
         # --- Commit unique — tout ou rien ---
         oSNP.ogEngine.commit()
 
+        # --- REFRESH vue matérialisée si fin de session de charge ---
+        # Exécuté APRÈS le commit — hors transaction DML.
+        # CONCURRENTLY : pas de lock exclusif, dashboard lisible pendant le refresh.
+        if etat_charge in ETATS_FIN_SESSION:
+            self._refresh_vue_sessions(oSNP.ogEngine)
+
         return snp_id
+
+    def _refresh_vue_sessions(self, engine):
+        """
+        Déclenche le REFRESH MATERIALIZED VIEW CONCURRENTLY de mv_charge_sessions.
+
+        Appelé uniquement sur transition vers Complete ou Stopped.
+        En cas d'échec, on logue un warning sans interrompre le collecteur —
+        le snapshot est déjà committé, la vue sera rafraîchie au prochain cycle.
+        """
+        try:
+            engine.execute_non_query(
+                "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_charge_sessions"
+            )
+            # commit() pour s'assurer que psycopg2 ne met pas la commande
+            # en attente dans un bloc de transaction ouvert
+            engine.commit()
+            self._log.info(
+                "clsCollecteur | mv_charge_sessions rafraîchie "
+                "(transition fin de session détectée)."
+            )
+        except Exception as e:
+            self._log.warning(
+                f"clsCollecteur | Échec REFRESH mv_charge_sessions : {e} "
+                "— sera rafraîchie au prochain cycle Complete/Stopped."
+            )
 
     # --------------------------------------------------
     # Mappers Tesla → entités
@@ -341,14 +339,18 @@ class clsCollecteur:
         """
         Mappe la réponse Tesla complète vers un objet clsSNP prêt à l'insert.
 
-        snp_timestamp   : converti depuis le timestamp Tesla en millisecondes (UTC)
+        snp_timestamp   : converti depuis le timestamp Tesla en ms (UTC)
+                          Source : charge_state.timestamp
+                          Fallback : vehicle_state.timestamp
         snp_collectedat : horodatage UTC du collecteur au moment de la collecte
-        snp_state       : état du véhicule au moment du snapshot ("online" ici)
-        snp_odometer    : kilométrage en miles — valeur brute Tesla, conversion à l'affichage
+        snp_state       : état du véhicule ("online" ici — seul état collecté)
+        snp_odometer    : kilométrage en miles — valeur brute Tesla
         snp_firmware    : version firmware embarqué (ex: "2026.8")
         """
-        # Le timestamp Tesla est en millisecondes depuis epoch UTC
-        ts_ms  = donnees.get("vehicle_state", {}).get("timestamp")
+        ts_ms = (
+            donnees.get("charge_state", {}).get("timestamp")
+            or donnees.get("vehicle_state", {}).get("timestamp")
+        )
         ts_utc = self._ms_epoch_vers_datetime(ts_ms)
 
         oSNP = clsSNP()
@@ -365,12 +367,14 @@ class clsCollecteur:
         """
         Mappe charge_state Tesla vers un objet clsCHG prêt à l'insert.
 
-        Toutes les valeurs sont conservées brutes (miles, km/h d'autonomie...).
-        La conversion pour l'affichage se fait côté dashboard, pas ici.
+        Toutes les valeurs sont conservées brutes.
+        La conversion pour l'affichage se fait côté dashboard.
 
-        chg_energyadded : kWh ajoutés depuis le début de la session de charge.
-                          Accumulateur remis à 0 à chaque nouvelle session —
-                          la valeur maximale atteinte = énergie totale de la session.
+        chg_energyadded : kWh ajoutés depuis le début de la session.
+                          Accumulateur remis à 0 à chaque nouveau branchement —
+                          MAX(chg_energyadded) par session = énergie totale.
+        chg_batterylevel : % batterie affiché — utilisé par mv_charge_sessions
+                           pour calculer la capacité réelle par règle de trois.
         """
         oCHG = clsCHG()
         oCHG.snp_id            = snp_id
@@ -466,7 +470,6 @@ class clsCollecteur:
                 f"clsCollecteur | {compteur} échecs consécutifs pour "
                 f"veh_id={self._veh_id} — API injoignable ou token invalide."
             )
-            # clsLOG.critical() envoie automatiquement l'email en PROD
 
     def _reinitialiser_compteur_echecs(self):
         """Remet le compteur d'échecs à zéro après une collecte réussie."""

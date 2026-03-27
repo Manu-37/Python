@@ -1,34 +1,40 @@
 """
 clsFrequenceManager.py
 
-Décide si le collecteur doit interroger l'API Tesla lors de cette exécution.
+Decide si le collecteur doit interroger l'API Tesla lors de cette execution.
 
-Responsabilité unique : répondre à la question "est-ce le moment d'appeler Tesla ?".
-Aucun appel API, aucune écriture en base — uniquement de la lecture et de la logique.
+Responsabilite unique : repondre a la question "est-ce le moment d'appeler Tesla ?".
+Aucun appel API, aucune ecriture en base - uniquement de la lecture et de la logique.
 
 Principe de fonctionnement :
     Le cron lance tstat_collecteur.py toutes les 5 minutes.
     clsFrequenceManager consulte le dernier snapshot connu en base
-    pour déterminer l'état actuel du véhicule, puis compare l'écart
-    depuis le dernier appel à la fréquence cible pour cet état.
+    et compare l'ecart depuis le dernier appel a la frequence cible
+    pour l'etat actif du vehicule (charge ou conduite).
 
-    Si l'écart est insuffisant → on ne rappelle pas Tesla.
-    Si l'écart est suffisant   → on rappelle Tesla.
+    Si l'ecart est insuffisant -> on ne rappelle pas Tesla.
+    Si l'ecart est suffisant   -> on rappelle Tesla.
 
-    Cela permet d'avoir une fréquence variable (5 min, 30 min, 2h)
-    avec un cron fixe à 5 min, sans modifier le cron.
+    Quand le vehicule dort (asleep / offline), il ne repond pas -
+    le collecteur ne le reveille jamais. La gestion de frequence
+    differenciee (nuit, gare long) n'a donc pas d'utilite pratique :
+    Tesla gere lui-meme son endormissement.
+    On conserve deux frequences distinctes (charge / conduite)
+    pour permettre des ajustements fins via le fichier ini.
 
-États reconnus (depuis le dernier snapshot) :
-    "charge"       : véhicule branché (charge_state présent et chg_state != Disconnected)
-    "conduite"     : véhicule en mouvement (drive_state présent et drv_shiftstate non null)
-    "gare_recent"  : garé depuis moins de seuil_inactif secondes
-    "gare_inactif" : garé depuis plus de seuil_inactif secondes
-    "nuit"         : heure courante dans la plage nocturne (priorité sur les autres états)
-    "inconnu"      : aucun snapshot en base — premier démarrage
+Etats reconnus :
+    "charge"   : vehicule branche (chg_state present et != Disconnected)
+                 -> freq_charge (jamais soumis a la plage nocturne :
+                    risque de rater la transition Complete/Stopped)
+    "conduite" : tout le reste (en mouvement, gare, nuit)
+                 -> freq_conduite
+                 Le vehicule s'endort de lui-meme si inactif.
+    "inconnu"  : aucun snapshot en base -> interrogation immediate
 
-Cas "inconnu" :
-    Aucun snapshot en base = premier démarrage ou base vide.
-    On interroge Tesla immédiatement pour établir un état initial.
+OBSOLETE - code conserve pour retour arriere eventuel.
+La logique differenciee (nuit, gare_recent, gare_inactif) a ete abandonnee
+au profit d'une logique binaire charge/conduite.
+Pour restaurer : decommenter les blocs marques OBSOLETE.
 """
 
 from datetime import datetime, timezone, time as dt_time
@@ -37,7 +43,7 @@ from sysclasses.clsLOG import clsLOG
 
 class clsFrequenceManager:
     """
-    Gestionnaire de fréquence variable pour tstat_collecteur.
+    Gestionnaire de frequence variable pour tstat_collecteur.
 
     Usage :
         fm = clsFrequenceManager(params=oIni.collecteur_params, veh_id=1)
@@ -45,26 +51,22 @@ class clsFrequenceManager:
             # appeler Tesla
     """
 
-    # Noms des états — constantes pour éviter les fautes de frappe
-    ETAT_CHARGE        = "charge"
-    ETAT_CONDUITE      = "conduite"
-    ETAT_GARE_RECENT   = "gare_recent"
-    ETAT_GARE_INACTIF  = "gare_inactif"
-    ETAT_NUIT          = "nuit"
-    ETAT_INCONNU       = "inconnu"
+    # Noms des etats actifs
+    ETAT_CHARGE   = "charge"
+    ETAT_CONDUITE = "conduite"
+    ETAT_INCONNU  = "inconnu"
+
+    # OBSOLETE - etats differencies conserves pour retour arriere
+    # ETAT_GARE_RECENT   = "gare_recent"
+    # ETAT_GARE_INACTIF  = "gare_inactif"
+    # ETAT_NUIT          = "nuit"
 
     def __init__(self, params: dict, veh_id: int):
-        """
-        Paramètres :
-            params : dict issu de clsINICollecteur.collecteur_params
-            veh_id : identifiant du véhicule dans db_tstat_data
-        """
         self._log    = clsLOG()
         self._params = params
         self._veh_id = veh_id
 
-        # Dernier snapshot chargé une seule fois à l'instanciation
-        # Évite de faire plusieurs requêtes pour le même appel
+        # Dernier snapshot charge une seule fois a l'instanciation
         self._dernier_snp = self._charger_dernier_snapshot()
 
     # --------------------------------------------------
@@ -73,13 +75,8 @@ class clsFrequenceManager:
 
     def _charger_dernier_snapshot(self) -> dict | None:
         """
-        Charge le dernier snapshot connu pour ce véhicule depuis db_tstat_data.
-        Retourne un dict avec snp_*, chg_state (si existe), drv_shiftstate (si existe).
+        Charge le dernier snapshot connu pour ce vehicule depuis db_tstat_data.
         Retourne None si aucun snapshot en base.
-
-        On fait une requête directe plutôt que de passer par clsSNP
-        pour éviter N+1 requêtes (SNP puis CHG puis DRV séparément).
-        Une seule requête avec LEFT JOIN couvre les trois tables.
         """
         from sysclasses.clsDBAManager import clsDBAManager
         engine = clsDBAManager().get_db("TSTAT_DATA")
@@ -105,100 +102,95 @@ class clsFrequenceManager:
 
         if res:
             self._log.debug(
-                f"clsFrequenceManager | Dernier snapshot chargé : "
-                f"snp_id={res[0]['snp_id']} — état={res[0]['snp_state']}"
+                f"clsFrequenceManager | Dernier snapshot charge : "
+                f"snp_id={res[0]['snp_id']} - etat={res[0]['snp_state']}"
             )
             return res[0]
 
         self._log.warning(
             f"clsFrequenceManager | Aucun snapshot en base pour veh_id={self._veh_id} "
-            "— base vide ou première exécution. Interrogation immédiate."
+            "- base vide ou premiere execution. Interrogation immediate."
         )
         return None
 
     # --------------------------------------------------
-    # Détermination de l'état courant
+    # Determination de l'etat courant
     # --------------------------------------------------
 
     def _determiner_etat(self) -> str:
         """
-        Détermine l'état du véhicule depuis le dernier snapshot.
+        Determine l'etat actif du vehicule depuis le dernier snapshot.
 
-        Priorités :
-            1. Plage nocturne — prioritaire sur tout
-            2. Aucun snapshot → inconnu
-            3. En charge
-            4. En conduite
-            5. Garé récent / inactif selon l'écart depuis le dernier snapshot
+        Priorites :
+            1. Aucun snapshot -> inconnu (interrogation immediate)
+            2. En charge      -> charge  (jamais soumis a la nuit)
+            3. Tout le reste  -> conduite
+
+        OBSOLETE - ancienne logique differenciee (6 etats) :
+            1. Plage nocturne ET vehicule non branche -> nuit
+            2. Aucun snapshot -> inconnu
+            3. En charge -> charge
+            4. En conduite -> conduite
+            5. Gare depuis < seuil_inactif -> gare_recent
+            6. Gare depuis >= seuil_inactif -> gare_inactif
+
+        Code restaurable :
+            if self._dernier_snp is None:
+                return self.ETAT_INCONNU
+            chg_state = self._dernier_snp.get("chg_state")
+            if chg_state and chg_state not in ("Disconnected", None):
+                return self.ETAT_CHARGE
+            if self._est_nuit():
+                return self.ETAT_NUIT
+            drv_shiftstate = self._dernier_snp.get("drv_shiftstate")
+            if drv_shiftstate is not None:
+                return self.ETAT_CONDUITE
+            ecart = self._ecart_depuis_dernier_snapshot()
+            seuil_inactif = self._params["seuil_inactif"]
+            if ecart is None or ecart < seuil_inactif:
+                return self.ETAT_GARE_RECENT
+            return self.ETAT_GARE_INACTIF
         """
 
-        # --- Priorité 1 : plage nocturne ---
-        if self._est_nuit():
-            return self.ETAT_NUIT
-
-        # --- Priorité 2 : aucun snapshot ---
+        # Priorite 1 : aucun snapshot
         if self._dernier_snp is None:
             return self.ETAT_INCONNU
 
-        # --- Priorité 3 : en charge ---
+        # Priorite 2 : en charge - jamais soumis a la plage nocturne
         chg_state = self._dernier_snp.get("chg_state")
         if chg_state and chg_state not in ("Disconnected", None):
             return self.ETAT_CHARGE
 
-        # --- Priorité 4 : en conduite ---
-        drv_shiftstate = self._dernier_snp.get("drv_shiftstate")
-        if drv_shiftstate is not None:
-            return self.ETAT_CONDUITE
-
-        # --- Priorité 5 : garé récent ou inactif ---
-        ecart = self._ecart_depuis_dernier_snapshot()
-        seuil_inactif = self._params["seuil_inactif"]
-
-        if ecart is None or ecart < seuil_inactif:
-            return self.ETAT_GARE_RECENT
-
-        return self.ETAT_GARE_INACTIF
+        # Priorite 3 : tout le reste
+        # Le vehicule s'endort de lui-meme quand il n'a rien a faire.
+        return self.ETAT_CONDUITE
 
     # --------------------------------------------------
-    # Plage nocturne
+    # OBSOLETE - methodes de la logique differenciee
     # --------------------------------------------------
 
-    def _est_nuit(self) -> bool:
-        """
-        Retourne True si l'heure locale courante est dans la plage nocturne.
-
-        Gère le cas où la plage enjambe minuit (ex: 23:00 → 06:00).
-        """
-        maintenant = datetime.now().time()
-
-        debut = self._parse_heure(self._params["nuit_debut"])
-        fin   = self._parse_heure(self._params["nuit_fin"])
-
-        if debut <= fin:
-            # Plage dans la même journée (ex: 01:00 → 05:00 — cas rare)
-            return debut <= maintenant <= fin
-        else:
-            # Plage enjambe minuit (ex: 23:00 → 06:00 — cas normal)
-            return maintenant >= debut or maintenant <= fin
-
-    @staticmethod
-    def _parse_heure(heure_str: str) -> dt_time:
-        """Convertit une string 'HH:MM' en objet time."""
-        h, m = heure_str.split(":")
-        return dt_time(int(h), int(m))
+    # def _est_nuit(self) -> bool:
+    #     maintenant = datetime.now().time()
+    #     debut = self._parse_heure(self._params["nuit_debut"])
+    #     fin   = self._parse_heure(self._params["nuit_fin"])
+    #     if debut <= fin:
+    #         return debut <= maintenant <= fin
+    #     else:
+    #         return maintenant >= debut or maintenant <= fin
+    #
+    # @staticmethod
+    # def _parse_heure(heure_str: str) -> dt_time:
+    #     h, m = heure_str.split(":")
+    #     return dt_time(int(h), int(m))
 
     # --------------------------------------------------
-    # Écart depuis le dernier snapshot
+    # Ecart depuis le dernier snapshot
     # --------------------------------------------------
 
     def _ecart_depuis_dernier_snapshot(self) -> int | None:
         """
-        Retourne le nombre de secondes écoulées depuis le dernier snapshot.
+        Retourne le nombre de secondes ecoulees depuis le dernier snapshot.
         Retourne None si aucun snapshot disponible.
-
-        Utilise snp_collectedat (horodatage collecteur UTC) plutôt que
-        snp_timestamp (horodatage Tesla) pour mesurer l'écart réel
-        entre deux exécutions du collecteur.
         """
         if self._dernier_snp is None:
             return None
@@ -209,30 +201,36 @@ class clsFrequenceManager:
 
         maintenant = datetime.now(timezone.utc)
 
-        # snp_collectedat est un TIMESTAMPTZ — psycopg2 le retourne
-        # avec tzinfo. On s'assure que la comparaison est cohérente.
         if dernier.tzinfo is None:
-            # Sécurité si jamais retourné sans timezone
             from datetime import timezone as tz
             dernier = dernier.replace(tzinfo=tz.utc)
 
         return int((maintenant - dernier).total_seconds())
 
     # --------------------------------------------------
-    # Fréquence cible selon l'état
+    # Frequence cible selon l'etat
     # --------------------------------------------------
 
     def _freq_cible(self, etat: str) -> int:
-        """Retourne la fréquence cible en secondes pour l'état donné."""
+        """
+        Retourne la frequence cible en secondes pour l'etat donne.
+
+        OBSOLETE - ancienne table de mapping etendue (6 etats) :
+            mapping = {
+                self.ETAT_CHARGE:       self._params["freq_charge"],
+                self.ETAT_CONDUITE:     self._params["freq_conduite"],
+                self.ETAT_GARE_RECENT:  self._params["freq_gare_recent"],
+                self.ETAT_GARE_INACTIF: self._params["freq_gare_inactif"],
+                self.ETAT_NUIT:         self._params["freq_nuit"],
+                self.ETAT_INCONNU:      0,
+            }
+        """
         mapping = {
-            self.ETAT_CHARGE:       self._params["freq_charge"],
-            self.ETAT_CONDUITE:     self._params["freq_charge"],   # même fréquence que charge
-            self.ETAT_GARE_RECENT:  self._params["freq_gare_recent"],
-            self.ETAT_GARE_INACTIF: self._params["freq_gare_inactif"],
-            self.ETAT_NUIT:         self._params["freq_nuit"],
-            self.ETAT_INCONNU:      0,   # inconnu → on interroge immédiatement
+            self.ETAT_CHARGE:   self._params["freq_charge"],
+            self.ETAT_CONDUITE: self._params["freq_conduite"],
+            self.ETAT_INCONNU:  0,
         }
-        return mapping.get(etat, self._params["freq_gare_inactif"])
+        return mapping.get(etat, self._params["freq_conduite"])
 
     # --------------------------------------------------
     # Interface publique
@@ -240,52 +238,41 @@ class clsFrequenceManager:
 
     def doit_interroger(self) -> bool:
         """
-        Retourne True si le collecteur doit interroger Tesla lors de cette exécution.
-
-        Logique :
-            1. Déterminer l'état du véhicule
-            2. Calculer la fréquence cible pour cet état
-            3. Comparer l'écart depuis le dernier snapshot à la fréquence cible
-            4. Si écart >= fréquence cible (ou état inconnu) → True
+        Retourne True si le collecteur doit interroger Tesla lors de cette execution.
         """
         etat       = self._determiner_etat()
         freq_cible = self._freq_cible(etat)
         ecart      = self._ecart_depuis_dernier_snapshot()
 
         self._log.info(
-            f"clsFrequenceManager | état={etat} | "
+            f"clsFrequenceManager | etat={etat} | "
             f"freq_cible={freq_cible}s | "
             f"ecart={ecart}s"
         )
 
-        # Cas inconnu ou premier démarrage — on interroge toujours
         if etat == self.ETAT_INCONNU or ecart is None:
-            self._log.info("clsFrequenceManager | Premier démarrage → interrogation immédiate.")
+            self._log.info("clsFrequenceManager | Premier demarrage -> interrogation immediate.")
             return True
 
         decision = ecart >= freq_cible
 
         self._log.info(
-            f"clsFrequenceManager | décision={'OUI' if decision else 'NON'} "
-            f"({'écart suffisant' if decision else 'trop tôt'})"
+            f"clsFrequenceManager | decision={'OUI' if decision else 'NON'} "
+            f"({'ecart suffisant' if decision else 'trop tot'})"
         )
 
         return decision
 
     @property
     def etat_courant(self) -> str:
-        """Retourne l'état courant du véhicule (pour logging externe)."""
+        """Retourne l'etat courant du vehicule (pour logging externe)."""
         return self._determiner_etat()
 
     @property
     def freq_retry_active(self) -> bool:
         """
-        Retourne True si la fréquence courante est suffisamment grande
-        pour que le mécanisme de retry ait du sens.
-
-        Règle : freq_cible > seuil_retry_secondes
-        En dessous du seuil, le prochain cron arrive avant la fin des retries
-        → on n'active pas le retry pour éviter les chevauchements.
+        Retourne True si la frequence courante justifie l'activation du retry.
+        Regle : freq_cible > seuil_retry_secondes.
         """
         etat       = self._determiner_etat()
         freq_cible = self._freq_cible(etat)
