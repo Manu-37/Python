@@ -77,7 +77,7 @@ class clsDBA_SQL(clsDBA_ABS):
                 return dataset
             return cursor
         except Exception as e:
-            self._log.error(f"SQL | Erreur Lecture : {e}")
+            self._log.error(f"SQL : {command}, params={params}  | Erreur Lecture : {e}")
             raise
 
     def execute_non_query(self, command: str, params: tuple = None):
@@ -87,7 +87,7 @@ class clsDBA_SQL(clsDBA_ABS):
             cursor.execute(command, params)
             return cursor.rowcount
         except Exception as e:
-            self._log.error(f"SQL | Erreur Action : {e}")
+            self._log.error(f"SQL : {command}, params={params}  | Erreur Action : {e}")
             raise
         finally:
             if cursor: cursor.close()
