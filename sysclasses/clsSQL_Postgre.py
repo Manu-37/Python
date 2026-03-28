@@ -65,7 +65,7 @@ class clsSQL_Postgre(clsDBA_SQL):
     def commit(self):
         if self._connection:
             self._connection.commit()
-            self._log.info("SQL | COMMIT")
+            self._log.debug("SQL | COMMIT")
 
     def rollback(self):
         if self._connection:

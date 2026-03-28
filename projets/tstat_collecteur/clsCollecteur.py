@@ -120,7 +120,7 @@ class clsCollecteur:
         donnees = self._appeler_tesla_avec_retry(freq_retry_active)
 
         if donnees is None:
-            return {"succes": False, "erreur": "Véhicule non online ou injoignable."}
+            return {"succes": False, "erreur": "Véhicule non online ou injoignable."} 
 
         try:
             snp_id = self._persister(donnees)
