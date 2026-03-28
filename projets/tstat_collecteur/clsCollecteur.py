@@ -316,7 +316,7 @@ class clsCollecteur:
         """
         try:
             engine.execute_non_query(
-                "REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_charge_sessions"
+                "SELECT public.fct_refresh_mv_charge_sessions();"
             )
             # commit() pour s'assurer que psycopg2 ne met pas la commande
             # en attente dans un bloc de transaction ouvert
