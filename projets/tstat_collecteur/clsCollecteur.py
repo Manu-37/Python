@@ -100,7 +100,7 @@ class clsCollecteur:
         self._auth    = clsTeslaAuth(veh_id=veh_id)
         self._vehicle = clsTeslaVehicle(self._auth)
 
-        self._log.info(
+        self._log.debug(
             f"clsCollecteur | Initialisé pour {self._oVEH.veh_displayname} "
             f"(VIN={self._oVEH.veh_vin})"
         )
