@@ -104,7 +104,7 @@ class clsEmailManager:
 
                 mention_dest = (f"{len(recipients_defaut)} destinataire(s) par défaut"
                                 if recipients_defaut else "sans destinataires par défaut")
-                self._log.info(f"clsEmailManager | Profil '{nom}' chargé — {mention_dest}.")
+                self._log.debug(f"clsEmailManager | Profil '{nom}' chargé — {mention_dest}.")
 
             except Exception as e:
                 self._log.error(f"clsEmailManager | Profil '{nom}' ignoré — {e}")

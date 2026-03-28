@@ -26,7 +26,7 @@ class clsDBA_SQL(clsDBA_ABS):
 
         if ssh_params and ssh_params.get('enabled'):
             try:
-                self._log.info(f"Ouverture tunnel SSH vers {ssh_params['host']}...")
+                self._log.debug(f"Ouverture tunnel SSH vers {ssh_params['host']}...")
                 
                 # Lecture intègre (newline='') pour éviter la corruption Windows
                 with open(ssh_params['ssh_key_path'], 'r', encoding='utf-8', newline='') as f:
