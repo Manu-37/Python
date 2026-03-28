@@ -124,7 +124,7 @@ class clsCollecteur:
 
         try:
             snp_id = self._persister(donnees)
-            self._log.info(f"clsCollecteur | Snapshot enregistré — snp_id={snp_id}")
+            self._log.debug(f"clsCollecteur | Snapshot enregistré — snp_id={snp_id}")
             self._reinitialiser_compteur_echecs()
             return {"succes": True, "snp_id": snp_id}
 
