@@ -49,7 +49,7 @@ class clsSQL_Postgre(clsDBA_SQL):
             self._connection = psycopg2.connect(
                 host=host, port=port, database=dbname, user=user, password=pwd
             )
-            self._log.info(f"SQL | Connexion établie : {dbname} sur {host}:{port}")
+            self._log.debug(f"SQL | Connexion établie : {dbname} sur {host}:{port}")
         except Exception as e:
             self._log.error(f"SQL | Échec connexion : {e}")
             raise

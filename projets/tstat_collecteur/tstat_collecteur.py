@@ -187,7 +187,7 @@ def main():
             log.warning("tstat_collecteur | Aucun véhicule actif trouvé — fin.")
             return
 
-        log.info(f"tstat_collecteur | {len(vehicules)} véhicule(s) actif(s).")
+        log.debug(f"tstat_collecteur | {len(vehicules)} véhicule(s) actif(s).")
 
         # --- Traitement de chaque véhicule ---
         for veh in vehicules:

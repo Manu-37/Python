@@ -97,7 +97,7 @@ class clsTeslaAuth:
                 "Vérifiez la table t_teslatoken_ttk."
             )
 
-        self._log.info(f"clsTeslaAuth | Configuration chargée pour veh_id={self._veh_id}.")
+        self._log.debug(f"clsTeslaAuth | Configuration chargée pour veh_id={self._veh_id}.")
 
     # --------------------------------------------------
     # Initialisation de session au démarrage

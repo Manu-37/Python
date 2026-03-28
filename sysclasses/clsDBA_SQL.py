@@ -57,7 +57,7 @@ class clsDBA_SQL(clsDBA_ABS):
                 
                 host = '127.0.0.1'
                 port = self._ssh_tunnel.local_bind_port
-                self._log.info(f"Tunnel SSH établi sur le port local {port}")
+                self._log.debug(f"Tunnel SSH établi sur le port local {port}")
                 
             except Exception as e:
                 self._log.error(f"Échec Tunnel SSH : {e}")

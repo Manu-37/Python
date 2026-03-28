@@ -256,7 +256,7 @@ class clsFrequenceManager:
 
         decision = ecart >= freq_cible
 
-        self._log.info(
+        self._log.debug(
             f"clsFrequenceManager | decision={'OUI' if decision else 'NON'} "
             f"({'ecart suffisant' if decision else 'trop tot'})"
         )

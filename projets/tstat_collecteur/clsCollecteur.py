@@ -164,7 +164,7 @@ class clsCollecteur:
             return None
 
         if etat != ETAT_ONLINE:
-            self._log.info(
+            self._log.debug(
                 f"clsCollecteur | Véhicule '{etat}' — "
                 "pas de collecte, pas de réveil. Comportement normal."
             )
@@ -239,7 +239,7 @@ class clsCollecteur:
             return None
 
         state = etat["data"].get("state", "unknown")
-        self._log.info(f"clsCollecteur | État véhicule (sans réveil) : '{state}'")
+        self._log.debug(f"clsCollecteur | État véhicule (sans réveil) : '{state}'")
         return state
 
     def _appeler_par_vin(self) -> dict:

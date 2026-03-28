@@ -53,7 +53,7 @@ class clsDBAManager:
         db_ref = clsSQL_Postgre(self._log)
         db_ref.connect_with_tunnel(db_p, ssh_p)
         self._connections['__REGISTRY__'] = db_ref
-        self._log.info("Registre central connecté.")
+        self._log.debug("Registre central connecté.")
 
     @staticmethod
     def _get_client_host() -> str:
