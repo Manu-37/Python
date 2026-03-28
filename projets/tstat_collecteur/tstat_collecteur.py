@@ -178,7 +178,7 @@ def main():
         log    = bootstrap.oLog
         params = bootstrap.oIni.collecteur_params
 
-        log.info("tstat_collecteur | Démarrage.")
+        log.debug("tstat_collecteur | Démarrage.")
 
         # --- Véhicules actifs ---
         vehicules = _charger_vehicules_actifs()
@@ -193,7 +193,7 @@ def main():
         for veh in vehicules:
             _traiter_vehicule(veh, params, log)
 
-        log.info("tstat_collecteur | Traitement terminé.")
+        log.debug("tstat_collecteur | Traitement terminé.")
 
     except RuntimeError as e:
         # AppBootstrap lève RuntimeError en mode console sur erreur fatale
