@@ -370,3 +370,50 @@ class Tools:
         Ne préjuge pas si la méthode est exécutable.
         """
         return hasattr(objet, nom_methode)
+
+    # --- Conversions ---
+
+    @staticmethod
+    def miles_to_km(miles: float, decimales: int = 6) -> float:
+        """
+        Convertit des miles en kilomètres.
+        Facteur : 1 mile = 1.609344 km (définition internationale 1959).
+
+        Paramètres :
+            miles     : valeur numérique en miles
+            decimales : précision du résultat arrondi (défaut 6).
+                        Choisir selon l'usage ultérieur :
+                        - 6 si les valeurs sont agrégées après conversion
+                          (minimise l'accumulation d'erreurs d'arrondi)
+                        - 3 si la valeur est une donnée finale non reagrégée
+
+        Lève TypeError si miles n'est pas numérique.
+
+        Exemple :
+            Tools.miles_to_km(63854.221895)     → 102766.942...
+            Tools.miles_to_km(63854.221895, 3)  → 102766.943
+            Tools.miles_to_km(63854.221895, 0)  → 102767.0
+        """
+        return round(miles * 1.609344, decimales)
+
+    @staticmethod
+    def km_to_miles(km: float, decimales: int = 6) -> float:
+        """
+        Convertit des kilomètres en miles.
+        Facteur : 1 mile = 1.609344 km (définition internationale 1959).
+
+        Paramètres :
+            km        : valeur numérique en kilomètres
+            decimales : précision du résultat arrondi (défaut 6).
+                        Choisir selon l'usage ultérieur :
+                        - 6 si les valeurs sont agrégées après conversion
+                        - 3 si la valeur est une donnée finale non reagrégée
+
+        Lève TypeError si km n'est pas numérique.
+
+        Exemple :
+            Tools.km_to_miles(102766.943)       → 63854.221...
+            Tools.km_to_miles(102766.943, 3)    → 63854.221
+            Tools.km_to_miles(102766.943, 0)    → 63854.0
+        """
+        return round(km / 1.609344, decimales)

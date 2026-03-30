@@ -307,30 +307,54 @@ class clsCollecteur:
         return snp_id
 
     def _refresh_vue_sessions(self, engine):
-        """
-        Déclenche le REFRESH MATERIALIZED VIEW CONCURRENTLY de mv_charge_sessions.
+            """
+            Déclenche le REFRESH des deux MV de charge via fct_refresh_all_charge_mv().
 
-        Appelé uniquement sur transition vers Complete ou Stopped.
-        En cas d'échec, on logue un warning sans interrompre le collecteur —
-        le snapshot est déjà committé, la vue sera rafraîchie au prochain cycle.
-        """
-        try:
-            engine.execute_non_query(
-                "SELECT public.fct_refresh_mv_charge_sessions();"
-            )
-            # commit() pour s'assurer que psycopg2 ne met pas la commande
-            # en attente dans un bloc de transaction ouvert
-            engine.commit()
-            self._log.info(
-                "clsCollecteur | mv_charge_sessions rafraîchie "
-                "(transition fin de session détectée)."
-            )
-        except Exception as e:
-            self._log.warning(
-                f"clsCollecteur | Échec REFRESH mv_charge_sessions : {e} "
-                "— sera rafraîchie au prochain cycle Complete/Stopped."
-            )
+            Codes retour PostgreSQL :
+                'OK'       — mv_charge_sessions + mv_charge_sessions_ext rafraîchies
+                'ERR_MV1'  — échec sur mv_charge_sessions (mv_charge_sessions_ext non tentée)
+                'ERR_MV2'  — mv_charge_sessions OK, échec sur mv_charge_sessions_ext
 
+            En cas d'échec partiel ou total, on logue un warning sans interrompre
+            le collecteur — le snapshot est déjà committé, les MV seront
+            rafraîchies au prochain cycle Complete/Stopped.
+            """
+            try:
+                res = engine.execute_select(
+                    "SELECT public.fct_refresh_all_charge_mv() AS statut;"
+                )
+                statut = res[0]["statut"] if res else "UNKNOWN"
+
+                if statut == "OK":
+                    self._log.info(
+                        "clsCollecteur | mv_charge_sessions + mv_charge_sessions_ext "
+                        "rafraîchies (transition fin de session détectée)."
+                    )
+                elif statut == "ERR_MV1":
+                    self._log.warning(
+                        "clsCollecteur | Échec REFRESH mv_charge_sessions — "
+                        "mv_charge_sessions_ext non tentée. "
+                        "Sera rafraîchie au prochain cycle Complete/Stopped."
+                    )
+                elif statut == "ERR_MV2":
+                    self._log.warning(
+                        "clsCollecteur | mv_charge_sessions OK — "
+                        "Échec REFRESH mv_charge_sessions_ext. "
+                        "Sera rafraîchie au prochain cycle Complete/Stopped."
+                    )
+                else:
+                    self._log.warning(
+                        f"clsCollecteur | Statut REFRESH inattendu : '{statut}' — "
+                        "vérifier fct_refresh_all_charge_mv()."
+                    )
+
+                engine.commit()
+
+            except Exception as e:
+                self._log.warning(
+                    f"clsCollecteur | Échec appel fct_refresh_all_charge_mv() : {e} — "
+                    "MV sera rafraîchie au prochain cycle Complete/Stopped."
+                )
     # --------------------------------------------------
     # Mappers Tesla → entités
     # --------------------------------------------------

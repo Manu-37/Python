@@ -5,11 +5,26 @@ class clsTableMetadata:
     Chaque colonne du dict interne porte les champs suivants :
         name, db_type, canonical_type, max_length, precision, scale,
         nullable, is_pk, is_identity, identity_generation, default,
+        comment,
         is_fk, fk_schema, fk_table, fk_value_col
 
     Les 4 derniers champs (is_fk, fk_*) valent None si la colonne
     n'est pas une clé étrangère. Ils sont alimentés par clsSQL_Postgre
     via les catalogues système — clsTableMetadata n'y touche pas.
+
+    Convention comment PostgreSQL pour get_col_label() / get_col_tooltip() :
+        "Label court|Description longue utilisée comme tooltip"
+        ─────────────────────────────────────────────────────
+        Si le comment contient '|', la partie gauche est le label d'affichage
+        et la partie droite le tooltip.
+        Si le comment ne contient pas '|', tout le comment devient le tooltip
+        et le label est dérivé du nom de la colonne (fallback).
+        Si le comment est absent (None), label et tooltip sont tous deux
+        dérivés du nom de colonne.
+
+    Exemple SQL :
+        COMMENT ON COLUMN mv_charge_sessions.soc_debut_pct
+            IS 'SOC début|% batterie au premier snapshot de la session';
     """
 
     def __init__(self, table_name: str, canonical_dict: list[dict]):
@@ -137,3 +152,57 @@ class clsTableMetadata:
         family = ctype[0] if isinstance(ctype, tuple) else "OTHER"
 
         return "e" if family == "NUMERIC" else "w"
+
+    # --------------------------------------------------
+    # Label d'affichage et tooltip
+    # --------------------------------------------------
+
+    @staticmethod
+    def _col_name_fallback(col_name: str) -> str:
+        """Dérive un label lisible depuis un nom de colonne snake_case."""
+        return col_name.replace("_", " ").title()
+
+    def get_col_label(self, col_name: str) -> str:
+        """
+        Retourne le label court d'affichage pour une colonne.
+
+        Priorité :
+          1. Partie gauche du comment si celui-ci contient '|'
+             ex: comment = "SOC début|% batterie au 1er snapshot"  → "SOC début"
+          2. Fallback : nom de colonne humanisé
+             ex: "soc_debut_pct" → "Soc Debut Pct"
+
+        Note : si le comment existe mais ne contient pas '|', il est traité
+        comme tooltip uniquement (phrase longue) — le fallback nom s'applique
+        alors au label.  Cela évite qu'une phrase longue polluée les headers.
+        """
+        col     = self.get_column(col_name)
+        comment = col.get("comment")
+
+        if comment and "|" in comment:
+            return comment.split("|", 1)[0].strip()
+
+        return self._col_name_fallback(col_name)
+
+    def get_col_tooltip(self, col_name: str) -> str | None:
+        """
+        Retourne le texte de tooltip pour une colonne, ou None si absent.
+
+        Priorité :
+          1. Partie droite du comment si celui-ci contient '|'
+             ex: comment = "SOC début|% batterie au 1er snapshot"
+                 → "% batterie au 1er snapshot"
+          2. Comment entier s'il n'y a pas de '|'
+             (phrase descriptive directement utilisable comme tooltip)
+          3. None si pas de comment
+        """
+        col     = self.get_column(col_name)
+        comment = col.get("comment")
+
+        if not comment:
+            return None
+
+        if "|" in comment:
+            return comment.split("|", 1)[1].strip()
+
+        return comment
