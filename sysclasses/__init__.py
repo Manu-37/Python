@@ -16,3 +16,7 @@ from .ui.UI_Core import UI_Core, MK_SEP, MK_BLANK, MK_BLANK_HEIGHT
 from .ui.Entity_ListView import Entity_ListView
 from .AppBootstrap import AppBootstrap
 from .tools import Tools
+from .ui.streamlit.clsStView        import clsStView
+from .ui.streamlit.clsStChartView   import clsStChartView
+from .ui.streamlit.clsStTableView   import clsStTableView
+from .ui.streamlit.clsStFilterView  import clsStFilterView

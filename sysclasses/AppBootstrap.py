@@ -21,20 +21,29 @@ class AppBootstrap:
         6. clsEmailManager — dépend de clsINICommun
 
     Modes :
-        'ui'      : erreurs fatales via dialog graphique CTk (défaut)
-                    customtkinter n'est importé qu'en mode ui et uniquement
-                    si une erreur fatale survient — pas de dépendance UI
-                    pour les projets console.
-        'console' : erreurs fatales via log critical + arrêt propre
+        'ui'        : erreurs fatales via dialog graphique CTk (défaut)
+                      customtkinter n'est importé qu'en mode ui et uniquement
+                      si une erreur fatale survient — pas de dépendance UI
+                      pour les projets console.
+        'console'   : erreurs fatales via log critical + arrêt propre
+        'streamlit' : erreurs fatales via stderr si Streamlit non encore démarré,
+                      ou via st.error() + st.stop() si le contexte Streamlit
+                      est actif (réexécution de page).
+                      streamlit n'est importé qu'en mode streamlit et uniquement
+                      si une erreur fatale survient.
 
     Usage :
-        # Application UI
+        # Application UI (CustomTkinter)
         from projets.MonProjet.clsINIMonProjet import clsINIMonProjet
         bootstrap = AppBootstrap(ini_file, clsINIMonProjet)
 
-        # Script console
+        # Script console / cron
         from projets.MonProjet.clsINIMonProjet import clsINIMonProjet
         bootstrap = AppBootstrap(ini_file, clsINIMonProjet, mode='console')
+
+        # Application Streamlit
+        from projets.MonProjet.clsINIMonProjet import clsINIMonProjet
+        bootstrap = AppBootstrap(ini_file, clsINIMonProjet, mode='streamlit')
 
     En cas d'échec l'application ne démarre jamais dans un état partiel.
     """
@@ -173,11 +182,13 @@ class AppBootstrap:
             )
 
     # --------------------------------------------------
-    # Erreur fatale — UI ou console selon le mode
+    # Erreur fatale — dispatch selon le mode
     # --------------------------------------------------
     def _erreur_fatale(self, titre: str, message: str):
         if self._mode == 'console':
             self._erreur_fatale_console(titre, message)
+        elif self._mode == 'streamlit':
+            self._erreur_fatale_streamlit(titre, message)
         else:
             self._erreur_fatale_ui(titre, message)
 
@@ -191,6 +202,44 @@ class AppBootstrap:
             self.oLog.critical(f"AppBootstrap | {msg_complet}")
         else:
             print(f"\n[ERREUR FATALE] {msg_complet}\n", file=sys.stderr)
+        raise RuntimeError(msg_complet)
+
+    def _erreur_fatale_streamlit(self, titre: str, message: str):
+        """
+        Mode streamlit : deux comportements selon le contexte d'exécution.
+
+        Avant démarrage Streamlit (phase bootstrap dans le lanceur) :
+            → stderr + RuntimeError, comme le mode console.
+            Streamlit n'est pas encore démarré, st.* n'est pas disponible.
+
+        Pendant l'exécution Streamlit (réexécution de page, cache_resource) :
+            → st.error() + st.stop() pour afficher l'erreur dans le navigateur.
+            streamlit n'est importé qu'ici, jamais au niveau module.
+
+        Dans les deux cas : log critical si LOG est disponible.
+        """
+        msg_complet = f"{titre} | {message}"
+
+        if hasattr(self, 'oLog') and self.oLog:
+            self.oLog.critical(f"AppBootstrap | {msg_complet}")
+        else:
+            print(f"\n[ERREUR FATALE] {msg_complet}\n", file=sys.stderr)
+
+        # Tente d'utiliser le contexte Streamlit s'il est actif
+        try:
+            import streamlit as st
+            from streamlit.runtime.scriptrunner import get_script_run_ctx
+            if get_script_run_ctx() is not None:
+                # Contexte Streamlit actif → affichage dans le navigateur
+                st.error(f"**{titre}**\n\n{message}")
+                st.stop()
+                return  # st.stop() lève une exception interne Streamlit, mais par sécurité
+        except ImportError:
+            pass  # streamlit pas installé → on tombe sur le fallback console
+        except Exception:
+            pass  # get_script_run_ctx a échoué → contexte inactif
+
+        # Pas de contexte Streamlit actif → comportement console
         raise RuntimeError(msg_complet)
 
     def _erreur_fatale_ui(self, titre: str, message: str):

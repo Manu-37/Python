@@ -15,6 +15,9 @@ venv/
 .venv/
 env/
 
+#le dossier zzz tests qui contient les environnemente et les fichiers de tests. Essais et bac à sable divers
+zzz tests/
+
 # VSCode - paramètres locaux
 .vscode/
 

@@ -394,7 +394,7 @@ class Tools:
             Tools.miles_to_km(63854.221895, 3)  → 102766.943
             Tools.miles_to_km(63854.221895, 0)  → 102767.0
         """
-        return round(miles * 1.609344, decimales)
+        return round(float(miles) * 1.609344, decimales)
 
     @staticmethod
     def km_to_miles(km: float, decimales: int = 6) -> float:
@@ -416,4 +416,4 @@ class Tools:
             Tools.km_to_miles(102766.943, 3)    → 63854.221
             Tools.km_to_miles(102766.943, 0)    → 63854.0
         """
-        return round(km / 1.609344, decimales)
+        return round(float(km) / 1.609344, decimales)

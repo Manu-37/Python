@@ -1,5 +1,5 @@
 from sysclasses.tools import Tools
-from tstat_analyse.clsTstatBase import clsTstatBase
+from clsTstatBase import clsTstatBase
 
 
 class clsTstatCharge(clsTstatBase):
@@ -245,6 +245,42 @@ class clsTstatCharge(clsTstatBase):
         return self._apply_computed(rows)
 
     # =========================================================================
+    # Méthodes publiques — KPI page d'accueil
+    #
+    # Principe : un KPI = une méthode = une requête.
+    # kpi_home() est un assembleur qui appelle les méthodes unitaires.
+    # Chaque méthode unitaire est indépendante et réutilisable seule.
+    # =========================================================================
+
+    def kpi_home(self, veh_id: int = None) -> dict:
+        """
+        Assemble tous les KPI de la page d'accueil en un seul dict.
+        Chaque valeur provient d'une méthode indépendante (une requête chacune).
+
+        Retourne :
+            soc_glissant_7j        — SOC moyen sur les 7 derniers jours calendaires
+            derniere_session       — dict de la dernière session (ou None)
+            km_mois                — km parcourus depuis le 1er du mois courant
+            km_annee               — km parcourus depuis le 1er janvier (ou 1ère donnée)
+            energie_mois           — kWh ajoutés depuis le 1er du mois courant
+            energie_annee          — kWh ajoutés depuis le 1er janvier
+            conso_kwh_100km_mois   — consommation kWh/100km sur le mois courant
+            conso_kwh_100km_annee  — consommation kWh/100km sur l'année courante
+            derniere_capacite      — dernière capacité estimée valide (kWh) ou None
+        """
+        return {
+            "soc_glissant_7j"       : self._soc_glissant(veh_id, jours=7),
+            "derniere_session"      : self._derniere_session(veh_id),
+            "km_mois"               : self._km_periode(veh_id, "mois"),
+            "km_annee"              : self._km_periode(veh_id, "annee"),
+            "energie_mois"          : self._energie_periode(veh_id, "mois"),
+            "energie_annee"         : self._energie_periode(veh_id, "annee"),
+            "conso_kwh_100km_mois"  : self._conso_periode(veh_id, "mois"),
+            "conso_kwh_100km_annee" : self._conso_periode(veh_id, "annee"),
+            "derniere_capacite"     : self._derniere_capacite(veh_id),
+        }
+
+    # =========================================================================
     # Méthode générique privée — cœur de construction et d'exécution
     # =========================================================================
 
@@ -308,7 +344,170 @@ class clsTstatCharge(clsTstatBase):
         return self._apply_computed(rows)
 
     # =========================================================================
-    # Helpers privés
+    # Helpers privés — KPI unitaires
+    # =========================================================================
+
+    def _soc_glissant(self, veh_id: int = None, jours: int = 7) -> float | None:
+        """
+        SOC moyen sur les N derniers jours calendaires (basé sur fin_session).
+        Retourne None si aucune session dans la fenêtre.
+
+        La fenêtre est glissante depuis maintenant — pas depuis minuit.
+        Ex : jours=7 → sessions dont fin_session >= NOW() - INTERVAL '7 days'
+        """
+        ph             = self.ogEngine.placeholder
+        where_veh      = f"AND veh_id = {ph}" if veh_id is not None else ""
+        params         = [jours]
+        if veh_id is not None:
+            params.append(veh_id)
+
+        sql = f"""
+            SELECT ROUND(AVG(soc_fin_pct)::NUMERIC, 1) AS soc_moyen
+            FROM {self._SCHEMA}.{self._MV}
+            WHERE fin_session >= NOW() - INTERVAL '1 day' * {ph}
+            {where_veh}
+        """
+        rows = self.ogEngine.execute_select(sql, params)
+        if rows and rows[0]["soc_moyen"] is not None:
+            return float(rows[0]["soc_moyen"])
+        return None
+
+    def _derniere_session(self, veh_id: int = None) -> dict | None:
+        """
+        Retourne la dernière session connue (toutes colonnes + calculées km).
+        Retourne None si aucune session en base.
+        """
+        rows = self.sessions_recentes(veh_id=veh_id, limite=1)
+        return rows[0] if rows else None
+
+    def _km_periode(self, veh_id: int = None, periode: str = "mois") -> float | None:
+        """
+        Km parcourus depuis le début de la période courante.
+        Basé sur la somme de miles_depuis_charge_precedente convertie en km.
+
+        periode : 'mois'  → depuis le 1er du mois courant
+                  'annee' → depuis le 1er janvier de l'année courante
+
+        Les sessions sans valeur (1ère session du véhicule) sont exclues.
+        Retourne None si aucune donnée sur la période.
+        """
+        trunc      = "month" if periode == "mois" else "year"
+        ph         = self.ogEngine.placeholder
+        params     = []
+        where_veh  = ""
+        if veh_id is not None:
+            where_veh = f"AND veh_id = {ph}"
+            params.append(veh_id)
+
+        sql = f"""
+            SELECT ROUND(
+                SUM(miles_depuis_charge_precedente) * 1.60934
+                ::NUMERIC, 2
+            ) AS km_total
+            FROM {self._SCHEMA}.{self._MV}
+            WHERE debut_session >= DATE_TRUNC('{trunc}', NOW())
+              AND miles_depuis_charge_precedente IS NOT NULL
+              {where_veh}
+        """
+        rows = self.ogEngine.execute_select(sql, params if params else None)
+        if rows and rows[0]["km_total"] is not None:
+            return float(rows[0]["km_total"])
+        return None
+
+    def _energie_periode(self, veh_id: int = None, periode: str = "mois") -> float | None:
+        """
+        Énergie totale ajoutée (kWh) depuis le début de la période courante.
+
+        periode : 'mois'  → depuis le 1er du mois courant
+                  'annee' → depuis le 1er janvier de l'année courante
+
+        Retourne None si aucune donnée sur la période.
+        """
+        trunc     = "month" if periode == "mois" else "year"
+        ph        = self.ogEngine.placeholder
+        params    = []
+        where_veh = ""
+        if veh_id is not None:
+            where_veh = f"AND veh_id = {ph}"
+            params.append(veh_id)
+
+        sql = f"""
+            SELECT ROUND(SUM(energie_ajoutee_kwh)::NUMERIC, 2) AS energie_totale
+            FROM {self._SCHEMA}.{self._MV}
+            WHERE debut_session >= DATE_TRUNC('{trunc}', NOW())
+              {where_veh}
+        """
+        rows = self.ogEngine.execute_select(sql, params if params else None)
+        if rows and rows[0]["energie_totale"] is not None:
+            return float(rows[0]["energie_totale"])
+        return None
+
+    def _conso_periode(self, veh_id: int = None, periode: str = "mois") -> float | None:
+        """
+        Consommation moyenne en kWh/100km depuis le début de la période courante.
+
+        Calcul : SUM(energie_ajoutee_kwh) / SUM(miles * 1.60934) * 100
+        Les sessions sans distance (1ère session du véhicule) sont exclues
+        du dénominateur ET du numérateur pour éviter les biais.
+
+        periode : 'mois'  → depuis le 1er du mois courant
+                  'annee' → depuis le 1er janvier de l'année courante
+
+        Retourne None si km_total = 0 ou aucune donnée.
+        """
+        trunc     = "month" if periode == "mois" else "year"
+        ph        = self.ogEngine.placeholder
+        params    = []
+        where_veh = ""
+        if veh_id is not None:
+            where_veh = f"AND veh_id = {ph}"
+            params.append(veh_id)
+
+        sql = f"""
+            SELECT
+                SUM(energie_ajoutee_kwh)                        AS kwh_total,
+                SUM(miles_depuis_charge_precedente) * 1.60934   AS km_total
+            FROM {self._SCHEMA}.{self._MV}
+            WHERE debut_session >= DATE_TRUNC('{trunc}', NOW())
+              AND miles_depuis_charge_precedente IS NOT NULL
+              {where_veh}
+        """
+        rows = self.ogEngine.execute_select(sql, params if params else None)
+        if not rows:
+            return None
+        kwh_total = rows[0].get("kwh_total")
+        km_total  = rows[0].get("km_total")
+        if not kwh_total or not km_total or float(km_total) == 0:
+            return None
+        return round(float(kwh_total) / float(km_total) * 100, 2)
+
+    def _derniere_capacite(self, veh_id: int = None) -> float | None:
+        """
+        Dernière capacité batterie estimée valide (non NULL).
+        Retourne None si aucune estimation disponible en base.
+        """
+        ph        = self.ogEngine.placeholder
+        params    = []
+        where_veh = ""
+        if veh_id is not None:
+            where_veh = f"AND veh_id = {ph}"
+            params.append(veh_id)
+
+        sql = f"""
+            SELECT capacite_estimee_kwh
+            FROM {self._SCHEMA}.{self._MV}
+            WHERE capacite_estimee_kwh IS NOT NULL
+              {where_veh}
+            ORDER BY fin_session DESC
+            LIMIT 1
+        """
+        rows = self.ogEngine.execute_select(sql, params if params else None)
+        if rows and rows[0]["capacite_estimee_kwh"] is not None:
+            return float(rows[0]["capacite_estimee_kwh"])
+        return None
+
+    # =========================================================================
+    # Helpers privés — construction des filtres
     # =========================================================================
 
     def _build_filtres(
@@ -336,20 +535,41 @@ class clsTstatCharge(clsTstatBase):
         """
         Applique les conversions post-agrégation définies dans _COLONNES_CALCULEES.
 
-        Pour chaque ligne et chaque colonne calculée :
-            - si la colonne source est présente et non None → applique la fonction
-            - si la colonne source est absente ou None      → ignore silencieusement
+        Pour chaque colonne calculée :
+            - vérifie que fn est callable AVANT de boucler sur les lignes
+            - si non callable : log warning + colonne mise à None sur toutes
+              les lignes — le controller peut intercepter None et avertir
+              l'utilisateur. Une valeur miles non convertie silencieusement
+              serait une faute grave (donnée fausse sans indication).
+            - si callable et colonne source présente et non None → applique fn
+            - si colonne source absente ou None → ignore silencieusement
 
         Les colonnes brutes sources sont conservées dans le dict résultat.
-        Les colonnes calculées sont ajoutées avec decimales=2 (données finales).
+        Pas d'arrondi ici — précision maximale (défaut decimales=6 de miles_to_km).
+        C'est le controller qui arrondit selon le besoin d'affichage.
 
         Exemple :
-            row["odometer_debut"] = 63854.22
-            → row["odometer_debut_km"] = Tools.miles_to_km(63854.22, decimales=2)
+            row["odometer_debut"] = 63854.221895
+            → row["odometer_debut_km"] = Tools.miles_to_km(63854.221895)
+            →                          = 102766.942...  (6 décimales)
         """
-        for row in rows:
-            for col_calculee, (fn, col_source) in self._COLONNES_CALCULEES.items():
+        for col_calculee, (fn, col_source) in self._COLONNES_CALCULEES.items():
+
+            # Vérification callable une seule fois par colonne, pas à chaque ligne
+            if not callable(fn):
+                self.ogLog.warning(
+                    f"clsTstatCharge._apply_computed | "
+                    f"'{col_calculee}' : la fonction associée n'est pas callable. "
+                    f"Colonne mise à None sur toutes les lignes."
+                )
+                # None explicite sur toutes les lignes — le controller intercepte
+                for row in rows:
+                    row[col_calculee] = None
+                continue
+
+            for row in rows:
                 valeur_source = row.get(col_source)
                 if valeur_source is not None:
-                    row[col_calculee] = fn(valeur_source, decimales=2)
+                    row[col_calculee] = fn(valeur_source)   # decimales=6 par défaut
+
         return rows
