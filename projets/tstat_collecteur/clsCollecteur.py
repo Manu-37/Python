@@ -319,6 +319,7 @@ class clsCollecteur:
             le collecteur — le snapshot est déjà committé, les MV seront
             rafraîchies au prochain cycle Complete/Stopped.
             """
+            self._log.info("clsCollecteur | Déclenchement REFRESH mv_charge_sessions + mv_charge_sessions_ext.")
             try:
                 res = engine.execute_select(
                     "SELECT public.fct_refresh_all_charge_mv() AS statut;"
