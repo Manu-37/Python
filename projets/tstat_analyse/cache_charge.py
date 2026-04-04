@@ -1,17 +1,8 @@
 """
-cache.py — Couche cache Streamlit pour tstat_analyse.
+cache_charge.py — Couche cache Streamlit pour tstat_analyse et les fonctions et méthodes liées à la recharge du véhicule.
 
 Rôle :
-    1. Bootstrap des singletons dans le processus Streamlit (_bootstrap)
-    2. Isolation de toute dépendance st.cache_* dans un seul fichier
-
-Pourquoi _bootstrap() ici ?
-    Streamlit tourne dans un subprocess séparé du lanceur.
-    Les singletons (clsINICommun, clsLOG, clsDBAManager...) initialisés
-    dans run_tstat_analyse.py n'existent pas dans ce processus.
-    _bootstrap() les réinitialise une seule fois via st.cache_resource.
-    Toutes les valeurs nécessaires (chemins, constantes) sont transmises
-    par run_tstat_analyse.py via os.environ — zéro duplication.
+    Gérer les données en fonction de la durée de vie du TTL et de la logique métier de la recharge.
 
 TTL par défaut : 300s (5 minutes) — cohérent avec le cycle de collecte.
 """
@@ -19,47 +10,9 @@ TTL par défaut : 300s (5 minutes) — cohérent avec le cycle de collecte.
 import os
 import streamlit as st
 from projets.tstat_analyse.clsTstatCharge import clsTstatCharge
+from cache_ressources import get_charge
 
 _TTL = 300
-
-
-# =============================================================================
-# Bootstrap — une seule fois par session serveur
-# =============================================================================
-
-@st.cache_resource
-def _bootstrap() -> None:
-    """
-    Initialise les singletons du framework dans le processus Streamlit.
-    Les constantes projet sont lues depuis os.environ — calculées une
-    seule fois dans run_tstat_analyse.py, transmises via le subprocess.
-    """
-    from pathlib import Path
-    from sysclasses.cste_chemins import init_chemins
-    from sysclasses.AppBootstrap import AppBootstrap
-    from projets.tstat_analyse.clsINITstatAnalyse import clsINITstatAnalyse
-
-    init_chemins(
-        Path(os.environ["TSTAT_PROJET_RACINE"]),
-        os.environ["TSTAT_PROJET_NOM"],
-        os.environ["TSTAT_PROJET_VER"],
-    )
-    AppBootstrap(os.environ["TSTAT_INI_FILE"], clsINITstatAnalyse, mode='streamlit')
-
-
-# =============================================================================
-# Singleton clsTstatCharge — une seule instance par session serveur
-# =============================================================================
-
-@st.cache_resource
-def get_charge() -> clsTstatCharge:
-    """
-    Retourne l'instance unique de clsTstatCharge pour la session serveur.
-    _bootstrap() est appelé en premier — garantit que les singletons
-    du framework existent avant d'instancier clsTstatCharge.
-    """
-    _bootstrap()
-    return clsTstatCharge()
 
 
 # =============================================================================
@@ -72,9 +25,8 @@ def get_liste_vehicules() -> list[dict]:
     Liste des véhicules actifs (veh_id + veh_displayname), triés alphabétiquement.
     Source : TSTAT_ADMIN — t_vehicle_veh.
     """
-    _bootstrap()
     from sysclasses.clsDBAManager import clsDBAManager
-    engine = clsDBAManager().get_db("TSTAT_ADMIN")
+    engine = clsDBAManager().get_db("TSTAT_DATA")
     rows   = engine.execute_select(
         "SELECT veh_id, veh_displayname "
         "FROM public.t_vehicle_veh "

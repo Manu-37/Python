@@ -18,8 +18,15 @@ Toutes les données viennent de cache.py.
 
 import streamlit as st
 import plotly.graph_objects as go
-from cache import get_kpi_home, get_energie_par_jour, get_liste_vehicules
+from cache_ressources import bootstrap
+from cache_charge import get_kpi_home, get_energie_par_jour, get_liste_vehicules
 from utilis import COULEURS, fmt_float, fmt_date, kpi_bloc_format
+
+# =============================================================================
+# chargement du bootstrap — obligatoire pour les fonctions cache_resource et cache_data
+# =============================================================================
+
+bootstrap()
 
 # =============================================================================
 # Configuration de la page
