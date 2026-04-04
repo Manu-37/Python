@@ -308,18 +308,22 @@ class clsCollecteur:
 
     def _refresh_vue_sessions(self, engine):
             """
-            Déclenche le REFRESH des deux MV de charge via fct_refresh_all_charge_mv().
+            Déclenche le REFRESH des trois MV de charge via fct_refresh_all_charge_mv().
 
             Codes retour PostgreSQL :
-                'OK'       — mv_charge_sessions + mv_charge_sessions_ext rafraîchies
-                'ERR_MV1'  — échec sur mv_charge_sessions (mv_charge_sessions_ext non tentée)
-                'ERR_MV2'  — mv_charge_sessions OK, échec sur mv_charge_sessions_ext
+                'OK'       — MV1 + MV2 + MV3 rafraîchies
+                'ERR_MV1'  — échec MV1 (MV2 et MV3 non tentées)
+                'ERR_MV2'  — MV1 OK, échec MV2 (MV3 non tentée)
+                'ERR_MV3'  — MV1 + MV2 OK, échec mv_charge_journee
 
             En cas d'échec partiel ou total, on logue un warning sans interrompre
             le collecteur — le snapshot est déjà committé, les MV seront
             rafraîchies au prochain cycle Complete/Stopped.
             """
-            self._log.info("clsCollecteur | Déclenchement REFRESH mv_charge_sessions + mv_charge_sessions_ext.")
+            self._log.info(
+                "clsCollecteur | Déclenchement REFRESH "
+                "mv_charge_sessions + mv_charge_sessions_ext + mv_charge_journee."
+            )
             try:
                 res = engine.execute_select(
                     "SELECT public.fct_refresh_all_charge_mv() AS statut;"
@@ -328,19 +332,24 @@ class clsCollecteur:
 
                 if statut == "OK":
                     self._log.info(
-                        "clsCollecteur | mv_charge_sessions + mv_charge_sessions_ext "
-                        "rafraîchies (transition fin de session détectée)."
+                        "clsCollecteur | MV1 + MV2 + MV3 rafraîchies "
+                        "(transition fin de session détectée)."
                     )
                 elif statut == "ERR_MV1":
                     self._log.warning(
-                        "clsCollecteur | Échec REFRESH mv_charge_sessions — "
-                        "mv_charge_sessions_ext non tentée. "
+                        "clsCollecteur | Échec REFRESH mv_charge_sessions (MV1) — "
+                        "MV2 et MV3 non tentées. "
                         "Sera rafraîchie au prochain cycle Complete/Stopped."
                     )
                 elif statut == "ERR_MV2":
                     self._log.warning(
-                        "clsCollecteur | mv_charge_sessions OK — "
-                        "Échec REFRESH mv_charge_sessions_ext. "
+                        "clsCollecteur | MV1 OK — Échec REFRESH mv_charge_sessions_ext (MV2) — "
+                        "mv_charge_journee non tentée. "
+                        "Sera rafraîchie au prochain cycle Complete/Stopped."
+                    )
+                elif statut == "ERR_MV3":
+                    self._log.warning(
+                        "clsCollecteur | MV1 + MV2 OK — Échec REFRESH mv_charge_journee (MV3). "
                         "Sera rafraîchie au prochain cycle Complete/Stopped."
                     )
                 else:

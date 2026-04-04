@@ -371,6 +371,31 @@ class Tools:
         """
         return hasattr(objet, nom_methode)
 
+    # --- Formatage affichage ---
+
+    @staticmethod
+    def fmt_float(valeur, decimales: int = 1, suffixe: str = "") -> str:
+        """Formate un float en string ou retourne '—' si None."""
+        if valeur is None:
+            return "—"
+        return f"{round(float(valeur), decimales)}{suffixe}"
+
+    @staticmethod
+    def fmt_date(valeur, timezone: str = "Europe/Paris") -> str:
+        """
+        Formate un datetime UTC en heure locale (format français) ou retourne '—' si None.
+        Gère automatiquement heure d'été / heure d'hiver via zoneinfo.
+        """
+        if valeur is None:
+            return "—"
+        try:
+            from zoneinfo import ZoneInfo
+            if valeur.tzinfo is not None:
+                valeur = valeur.astimezone(ZoneInfo(timezone))
+            return valeur.strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            return str(valeur)
+
     # --- Conversions ---
 
     @staticmethod

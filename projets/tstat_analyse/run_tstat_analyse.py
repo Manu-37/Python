@@ -56,7 +56,7 @@ commande = [
 ]
 
 try:
-    subprocess.run(commande, check=True, env=env)
+    subprocess.run(commande, check=True, env=env, cwd=str(projet_racine))
 except KeyboardInterrupt:
     pass
 except subprocess.CalledProcessError as e:

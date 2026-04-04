@@ -36,8 +36,9 @@ class clsTstatCharge(clsTstatBase):
         du résultat (toutes les méthodes n'agrègent pas odometer_*).
     """
 
-    _SCHEMA = "public"
-    _MV     = "mv_charge_sessions_ext"
+    _SCHEMA      = "public"
+    _MV          = "mv_charge_sessions_ext"
+    _MV_JOURNEE  = "mv_charge_journee"
 
     _COLONNES_CALCULEES: dict[str, tuple] = {
         "odometer_debut_km"           : (Tools.miles_to_km, "odometer_debut"),
@@ -258,19 +259,23 @@ class clsTstatCharge(clsTstatBase):
         Chaque valeur provient d'une méthode indépendante (une requête chacune).
 
         Retourne :
-            soc_glissant_7j        — SOC moyen sur les 7 derniers jours calendaires
+            capacite_7j_moy        — capacité estimée moyenne sur les 7 derniers jours (kWh)
+            capacite_7j_delta      — delta vs les 7 jours précédents (kWh), None si insuffisant
             derniere_session       — dict de la dernière session (ou None)
             km_mois                — km parcourus depuis le 1er du mois courant
-            km_annee               — km parcourus depuis le 1er janvier (ou 1ère donnée)
+            km_annee               — km parcourus depuis le 1er janvier
             energie_mois           — kWh ajoutés depuis le 1er du mois courant
             energie_annee          — kWh ajoutés depuis le 1er janvier
             conso_kwh_100km_mois   — consommation kWh/100km sur le mois courant
             conso_kwh_100km_annee  — consommation kWh/100km sur l'année courante
             derniere_capacite      — dernière capacité estimée valide (kWh) ou None
         """
+        cap_7j, cap_7j_delta = self._capacite_glissante_7j(veh_id)
         return {
-            "soc_glissant_7j"       : self._soc_glissant(veh_id, jours=7),
+            "capacite_7j_moy"       : cap_7j,
+            "capacite_7j_delta"     : cap_7j_delta,
             "derniere_session"      : self._derniere_session(veh_id),
+            "journee_actuelle"      : self._journee_actuelle(veh_id),
             "km_mois"               : self._km_periode(veh_id, "mois"),
             "km_annee"              : self._km_periode(veh_id, "annee"),
             "energie_mois"          : self._energie_periode(veh_id, "mois"),
@@ -347,30 +352,95 @@ class clsTstatCharge(clsTstatBase):
     # Helpers privés — KPI unitaires
     # =========================================================================
 
-    def _soc_glissant(self, veh_id: int = None, jours: int = 7) -> float | None:
+    def _journee_actuelle(self, veh_id: int = None) -> dict | None:
         """
-        SOC moyen sur les N derniers jours calendaires (basé sur fin_session).
-        Retourne None si aucune session dans la fenêtre.
-
-        La fenêtre est glissante depuis maintenant — pas depuis minuit.
-        Ex : jours=7 → sessions dont fin_session >= NOW() - INTERVAL '7 days'
+        Dernière journée avec au moins une charge dans mv_charge_journee.
+        Retourne un dict enrichi avec km_journee et conso_kwh_100km calculés.
+        Retourne None si aucune donnée.
         """
-        ph             = self.ogEngine.placeholder
-        where_veh      = f"AND veh_id = {ph}" if veh_id is not None else ""
-        params         = [jours]
+        ph        = self.ogEngine.placeholder
+        params    = []
+        where_veh = ""
         if veh_id is not None:
+            where_veh = f"WHERE veh_id = {ph}"
             params.append(veh_id)
 
         sql = f"""
-            SELECT ROUND(AVG(soc_fin_pct)::NUMERIC, 1) AS soc_moyen
-            FROM {self._SCHEMA}.{self._MV}
-            WHERE fin_session >= NOW() - INTERVAL '1 day' * {ph}
+            SELECT
+                date_jour,
+                energie_ajoutee_kwh,
+                miles_depuis_charge_precedente,
+                capacite_estimee_kwh
+            FROM public.mv_charge_journee
             {where_veh}
+            ORDER BY date_jour DESC
+            LIMIT 1
         """
-        rows = self.ogEngine.execute_select(sql, params)
-        if rows and rows[0]["soc_moyen"] is not None:
-            return float(rows[0]["soc_moyen"])
-        return None
+        rows = self.ogEngine.execute_select(sql, params if params else None)
+        if not rows:
+            return None
+
+        row   = dict(rows[0])
+        miles = row.get("miles_depuis_charge_precedente")
+        kwh   = row.get("energie_ajoutee_kwh")
+
+        km    = round(float(miles) * 1.60934, 1) if miles is not None else None
+        conso = round(float(kwh) / km * 100, 1) if km and km > 0 and kwh else None
+
+        row["km_journee"]      = km
+        row["conso_kwh_100km"] = conso
+        return row
+
+    def _capacite_glissante_7j(
+        self, veh_id: int = None
+    ) -> tuple[float | None, float | None]:
+        """
+        Capacité batterie estimée moyennée sur les 7 derniers jours,
+        avec delta vs les 7 jours précédents.
+
+        Une seule requête sur mv_charge_journee — fenêtre de 14 jours,
+        séparée en deux moitiés par CASE.
+
+        Retourne :
+            (moy_actuelle, delta)
+            - moy_actuelle : moyenne kWh des 7 derniers jours (None si aucune mesure)
+            - delta        : moy_actuelle − moy_precedente (None si l'une des deux est None)
+        """
+        ph        = self.ogEngine.placeholder
+        params    = []
+        where_veh = ""
+        if veh_id is not None:
+            where_veh = f"AND veh_id = {ph}"
+            params.append(veh_id)
+
+        sql = f"""
+            SELECT
+                ROUND(AVG(CASE WHEN date_jour >= CURRENT_DATE - 7
+                               THEN capacite_estimee_kwh END)::NUMERIC, 1)
+                    AS cap_actuelle,
+                ROUND(AVG(CASE WHEN date_jour >= CURRENT_DATE - 14
+                                AND date_jour <  CURRENT_DATE - 7
+                               THEN capacite_estimee_kwh END)::NUMERIC, 1)
+                    AS cap_precedente
+            FROM {self._SCHEMA}.{self._MV_JOURNEE}
+            WHERE date_jour >= CURRENT_DATE - 14
+              AND capacite_estimee_kwh IS NOT NULL
+              {where_veh}
+        """
+        rows = self.ogEngine.execute_select(sql, params if params else None)
+        if not rows:
+            return None, None
+
+        cap_actuelle  = rows[0].get("cap_actuelle")
+        cap_precedente = rows[0].get("cap_precedente")
+
+        moy = float(cap_actuelle) if cap_actuelle is not None else None
+        if moy is not None and cap_precedente is not None:
+            delta = round(moy - float(cap_precedente), 1)
+        else:
+            delta = None
+
+        return moy, delta
 
     def _derniere_session(self, veh_id: int = None) -> dict | None:
         """
@@ -383,18 +453,18 @@ class clsTstatCharge(clsTstatBase):
     def _km_periode(self, veh_id: int = None, periode: str = "mois") -> float | None:
         """
         Km parcourus depuis le début de la période courante.
-        Basé sur la somme de miles_depuis_charge_precedente convertie en km.
+        Basé sur la somme de miles_depuis_charge_precedente de mv_charge_journee.
 
         periode : 'mois'  → depuis le 1er du mois courant
                   'annee' → depuis le 1er janvier de l'année courante
 
-        Les sessions sans valeur (1ère session du véhicule) sont exclues.
+        Les jours sans valeur (première session du véhicule) sont exclus.
         Retourne None si aucune donnée sur la période.
         """
-        trunc      = "month" if periode == "mois" else "year"
-        ph         = self.ogEngine.placeholder
-        params     = []
-        where_veh  = ""
+        trunc     = "month" if periode == "mois" else "year"
+        ph        = self.ogEngine.placeholder
+        params    = []
+        where_veh = ""
         if veh_id is not None:
             where_veh = f"AND veh_id = {ph}"
             params.append(veh_id)
@@ -404,8 +474,8 @@ class clsTstatCharge(clsTstatBase):
                 SUM(miles_depuis_charge_precedente) * 1.60934
                 ::NUMERIC, 2
             ) AS km_total
-            FROM {self._SCHEMA}.{self._MV}
-            WHERE debut_session >= DATE_TRUNC('{trunc}', NOW())
+            FROM {self._SCHEMA}.{self._MV_JOURNEE}
+            WHERE date_jour >= DATE_TRUNC('{trunc}', CURRENT_DATE)
               AND miles_depuis_charge_precedente IS NOT NULL
               {where_veh}
         """
@@ -417,6 +487,7 @@ class clsTstatCharge(clsTstatBase):
     def _energie_periode(self, veh_id: int = None, periode: str = "mois") -> float | None:
         """
         Énergie totale ajoutée (kWh) depuis le début de la période courante.
+        Source : mv_charge_journee (énergie déjà agrégée par jour).
 
         periode : 'mois'  → depuis le 1er du mois courant
                   'annee' → depuis le 1er janvier de l'année courante
@@ -433,8 +504,8 @@ class clsTstatCharge(clsTstatBase):
 
         sql = f"""
             SELECT ROUND(SUM(energie_ajoutee_kwh)::NUMERIC, 2) AS energie_totale
-            FROM {self._SCHEMA}.{self._MV}
-            WHERE debut_session >= DATE_TRUNC('{trunc}', NOW())
+            FROM {self._SCHEMA}.{self._MV_JOURNEE}
+            WHERE date_jour >= DATE_TRUNC('{trunc}', CURRENT_DATE)
               {where_veh}
         """
         rows = self.ogEngine.execute_select(sql, params if params else None)
@@ -445,10 +516,10 @@ class clsTstatCharge(clsTstatBase):
     def _conso_periode(self, veh_id: int = None, periode: str = "mois") -> float | None:
         """
         Consommation moyenne en kWh/100km depuis le début de la période courante.
+        Source : mv_charge_journee.
 
         Calcul : SUM(energie_ajoutee_kwh) / SUM(miles * 1.60934) * 100
-        Les sessions sans distance (1ère session du véhicule) sont exclues
-        du dénominateur ET du numérateur pour éviter les biais.
+        Les jours sans distance sont exclus du numérateur ET du dénominateur.
 
         periode : 'mois'  → depuis le 1er du mois courant
                   'annee' → depuis le 1er janvier de l'année courante
@@ -467,8 +538,8 @@ class clsTstatCharge(clsTstatBase):
             SELECT
                 SUM(energie_ajoutee_kwh)                        AS kwh_total,
                 SUM(miles_depuis_charge_precedente) * 1.60934   AS km_total
-            FROM {self._SCHEMA}.{self._MV}
-            WHERE debut_session >= DATE_TRUNC('{trunc}', NOW())
+            FROM {self._SCHEMA}.{self._MV_JOURNEE}
+            WHERE date_jour >= DATE_TRUNC('{trunc}', CURRENT_DATE)
               AND miles_depuis_charge_precedente IS NOT NULL
               {where_veh}
         """
@@ -480,6 +551,42 @@ class clsTstatCharge(clsTstatBase):
         if not kwh_total or not km_total or float(km_total) == 0:
             return None
         return round(float(kwh_total) / float(km_total) * 100, 2)
+
+    def energie_par_jour(
+        self,
+        veh_id    : int = None,
+        date_debut: str = None,
+    ) -> list[dict]:
+        """
+        Énergie ajoutée par jour depuis date_debut.
+        Source : mv_charge_journee — une ligne par jour, pas d'agrégation supplémentaire.
+
+        Retourne par jour :
+            periode              — date_jour (DATE)
+            energie_totale_kwh   — somme des énergies (alias pour compatibilité accueil.py)
+        """
+        ph        = self.ogEngine.placeholder
+        params    = []
+        where_veh = ""
+        where_date = ""
+        if veh_id is not None:
+            where_veh = f"AND veh_id = {ph}"
+            params.append(veh_id)
+        if date_debut is not None:
+            where_date = f"AND date_jour >= {ph}"
+            params.append(date_debut)
+
+        sql = f"""
+            SELECT
+                date_jour                   AS periode,
+                energie_ajoutee_kwh         AS energie_totale_kwh
+            FROM {self._SCHEMA}.{self._MV_JOURNEE}
+            WHERE TRUE
+              {where_veh}
+              {where_date}
+            ORDER BY date_jour ASC
+        """
+        return self.ogEngine.execute_select(sql, params if params else None)
 
     def _derniere_capacite(self, veh_id: int = None) -> float | None:
         """

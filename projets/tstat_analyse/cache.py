@@ -63,6 +63,28 @@ def get_charge() -> clsTstatCharge:
 
 
 # =============================================================================
+# Référentiel véhicules
+# =============================================================================
+
+@st.cache_data(ttl=_TTL)
+def get_liste_vehicules() -> list[dict]:
+    """
+    Liste des véhicules actifs (veh_id + veh_displayname), triés alphabétiquement.
+    Source : TSTAT_ADMIN — t_vehicle_veh.
+    """
+    _bootstrap()
+    from sysclasses.clsDBAManager import clsDBAManager
+    engine = clsDBAManager().get_db("TSTAT_ADMIN")
+    rows   = engine.execute_select(
+        "SELECT veh_id, veh_displayname "
+        "FROM public.t_vehicle_veh "
+        "WHERE veh_isactive = TRUE "
+        "ORDER BY veh_displayname ASC"
+    )
+    return rows or []
+
+
+# =============================================================================
 # KPI home
 # =============================================================================
 
@@ -76,14 +98,14 @@ def get_kpi_home(veh_id: int = None) -> dict:
 def get_energie_par_jour(veh_id: int = None, nb_jours: int = 30) -> list[dict]:
     """
     Énergie ajoutée par jour sur les nb_jours derniers jours.
+    Source : mv_charge_journee — une ligne par jour (pas d'agrégation session).
     Utilisé pour le mini-graphique de la home.
     """
     from datetime import date, timedelta
     date_debut = (date.today() - timedelta(days=nb_jours)).isoformat()
-    return get_charge().sessions_par_periode(
-        granularite = "jour",
-        veh_id      = veh_id,
-        date_debut  = date_debut,
+    return get_charge().energie_par_jour(
+        veh_id     = veh_id,
+        date_debut = date_debut,
     )
 
 
