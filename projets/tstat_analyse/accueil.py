@@ -4,26 +4,26 @@ accueil.py — Page d'accueil du dashboard tstat_analyse.
 Disposition :
     Sélecteur véhicule — titre
     ─────────────────────────────────────────────────────────────────
-    État courant (6 colonnes) :
-        Capacité 7j | Dernière charge (début + fin) | Km jour |
-        Énergie jour | Conso jour | Capacité estimée
+    État courant (7 colonnes) :
+        Dernière charge | Km jour | Énergie jour | Conso jour |
+        Rendement km | Moyenne 7j capacité | Dernière estimation capacité
     ─────────────────────────────────────────────────────────────────
-    Tableau kilométrage / énergie / consommation — mois et année
+    Tableau kilométrage / énergie / consommation / rendement — mois et année
     ─────────────────────────────────────────────────────────────────
     Graphique énergie par jour — 30 derniers jours
 
 Orchestrateur pur — pas de logique métier ni de calcul.
-Toutes les données viennent de cache.py.
+Toutes les données viennent de cache_charge.py.
 """
 
 import streamlit as st
 import plotly.graph_objects as go
 from cache_ressources import bootstrap
 from cache_charge import get_kpi_home, get_energie_par_jour, get_liste_vehicules
-from utilis import COULEURS, fmt_float, fmt_date, kpi_bloc_format
+from utilis import COULEURS, fmt_float, fmt_date, km_par_kwh, kpi_bloc_format, delta_couleur, delta_texte
 
 # =============================================================================
-# chargement du bootstrap — obligatoire pour les fonctions cache_resource et cache_data
+# Bootstrap — obligatoire avant tout appel cache
 # =============================================================================
 
 bootstrap()
@@ -70,23 +70,16 @@ derniere = kpi.get("derniere_session") or {}
 journee  = kpi.get("journee_actuelle") or {}
 
 # =============================================================================
-# État courant — 6 colonnes
+# État courant — 7 colonnes
+# Ordre : Dernière charge | Km jour | Énergie | Conso | Rendement | Cap. moy 7j | Cap. dernière
 # =============================================================================
 
 st.divider()
 st.subheader("État courant")
 
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 
 with col1:
-    st.metric(
-        label      = "Capacité estimée 7j",
-        value      = fmt_float(kpi.get("capacite_7j_moy"),   decimales=1, suffixe=" kWh"),
-        delta      = fmt_float(kpi.get("capacite_7j_delta"), decimales=1, suffixe=" kWh") if kpi.get("capacite_7j_delta") is not None else None,
-        delta_color= "normal",
-    )
-
-with col2:
     st.markdown(
         kpi_bloc_format(
             valeur = fmt_date(derniere.get("debut_session")),
@@ -96,7 +89,7 @@ with col2:
         unsafe_allow_html=True,
     )
 
-with col3:
+with col2:
     date_jour  = journee.get("date_jour")
     label_date = date_jour.strftime("%d/%m/%Y") if date_jour else "—"
     st.markdown(
@@ -108,7 +101,7 @@ with col3:
         unsafe_allow_html=True,
     )
 
-with col4:
+with col3:
     st.markdown(
         kpi_bloc_format(
             valeur  = fmt_float(journee.get("energie_ajoutee_kwh"), decimales=1, suffixe=" kWh"),
@@ -118,12 +111,22 @@ with col4:
         unsafe_allow_html=True,
     )
 
-with col5:
+with col4:
     st.markdown(
         kpi_bloc_format(
             valeur  = fmt_float(journee.get("conso_kwh_100km"), decimales=1, suffixe=" kWh/100km"),
             couleur = COULEURS["conso"],
             label   = "Consommation",
+        ),
+        unsafe_allow_html=True,
+    )
+
+with col5:
+    st.markdown(
+        kpi_bloc_format(
+            valeur  = fmt_float(km_par_kwh(journee.get("km_journee"), journee.get("energie_ajoutee_kwh")), decimales=1, suffixe=" km/kWh"),
+            couleur = COULEURS["rendementk"],
+            label   = "Rendement kilométrique",
         ),
         unsafe_allow_html=True,
     )
@@ -137,35 +140,54 @@ with col6:
             delta_cap = round(float(cap_derniere) - float(cap_precedente), 1)
         except Exception:
             pass
-    st.metric(
-        label      = "Capacité estimée",
-        value      = fmt_float(cap_derniere, decimales=1, suffixe=" kWh"),
-        delta      = fmt_float(delta_cap, decimales=1, suffixe=" kWh") if delta_cap is not None else None,
-        delta_color= "normal",
+    st.markdown(
+        kpi_bloc_format(
+            valeur   = fmt_float(cap_derniere, decimales=1, suffixe=" kWh"),
+            label    = "Dernière estimation",
+            label2   = delta_texte(delta_cap, decimales=1, suffixe=" kWh"),
+            couleur2 = delta_couleur(delta_cap),
+        ),
+        unsafe_allow_html=True,
+    )
+
+with col7:
+    cap_7j_moy   = kpi.get("capacite_7j_moy")
+    cap_7j_delta = kpi.get("capacite_7j_delta")
+    st.markdown(
+        kpi_bloc_format(
+            valeur   = fmt_float(cap_7j_moy, decimales=1, suffixe=" kWh"),
+            label    = "Moyenne 7j",
+            label2   = delta_texte(cap_7j_delta, decimales=1, suffixe=" kWh"),
+            couleur2 = delta_couleur(cap_7j_delta),
+        ),
+        unsafe_allow_html=True,
     )
 
 # =============================================================================
-# Tableau kilométrage / énergie / consommation — mois et année
+# Tableau kilométrage / énergie / consommation / rendement — mois et année
 # =============================================================================
 
 st.divider()
 
-_, col_km, col_nrj, col_conso = st.columns([1, 2, 2, 2])
-with col_km:    st.markdown("**Kilométrage**")
-with col_nrj:   st.markdown("**Énergie rechargée**")
-with col_conso: st.markdown("**Consommation**")
+_, col_km, col_nrj, col_conso, col_rendement, _, _ = st.columns(7)
+with col_km:        st.markdown("**Kilométrage**")
+with col_nrj:       st.markdown("**Énergie rechargée**")
+with col_conso:     st.markdown("**Consommation**")
+with col_rendement: st.markdown("**Rendement kilométrique**")
 
-col_label, col_km, col_nrj, col_conso = st.columns([1, 2, 2, 2])
-with col_label: st.markdown("<br>**Mois courant**", unsafe_allow_html=True)
-with col_km:    st.markdown(kpi_bloc_format(fmt_float(kpi.get("km_mois"),               decimales=0, suffixe=" km"),         COULEURS["km"]),      unsafe_allow_html=True)
-with col_nrj:   st.markdown(kpi_bloc_format(fmt_float(kpi.get("energie_mois"),          decimales=1, suffixe=" kWh"),        COULEURS["energie"]), unsafe_allow_html=True)
-with col_conso: st.markdown(kpi_bloc_format(fmt_float(kpi.get("conso_kwh_100km_mois"),  decimales=1, suffixe=" kWh/100km"), COULEURS["conso"]),   unsafe_allow_html=True)
+col_label, col_km, col_nrj, col_conso, col_rendement, _, _ = st.columns(7)
+with col_label:     st.markdown("<br>**Mois courant**", unsafe_allow_html=True)
+with col_km:        st.markdown(kpi_bloc_format(fmt_float(kpi.get("km_mois"),               decimales=0, suffixe=" km"),         COULEURS["km"]),         unsafe_allow_html=True)
+with col_nrj:       st.markdown(kpi_bloc_format(fmt_float(kpi.get("energie_mois"),          decimales=1, suffixe=" kWh"),        COULEURS["energie"]),    unsafe_allow_html=True)
+with col_conso:     st.markdown(kpi_bloc_format(fmt_float(kpi.get("conso_kwh_100km_mois"),  decimales=1, suffixe=" kWh/100km"), COULEURS["conso"]),      unsafe_allow_html=True)
+with col_rendement: st.markdown(kpi_bloc_format(fmt_float(km_par_kwh(kpi.get("km_mois"),    kpi.get("energie_mois")),            decimales=1, suffixe=" km/kWh"), COULEURS["rendementk"]), unsafe_allow_html=True)
 
-col_label, col_km, col_nrj, col_conso = st.columns([1, 2, 2, 2])
-with col_label: st.markdown("<br>**Année courante**", unsafe_allow_html=True)
-with col_km:    st.markdown(kpi_bloc_format(fmt_float(kpi.get("km_annee"),               decimales=0, suffixe=" km"),         COULEURS["km"]),      unsafe_allow_html=True)
-with col_nrj:   st.markdown(kpi_bloc_format(fmt_float(kpi.get("energie_annee"),          decimales=1, suffixe=" kWh"),        COULEURS["energie"]), unsafe_allow_html=True)
-with col_conso: st.markdown(kpi_bloc_format(fmt_float(kpi.get("conso_kwh_100km_annee"), decimales=1, suffixe=" kWh/100km"), COULEURS["conso"]),   unsafe_allow_html=True)
+col_label, col_km, col_nrj, col_conso, col_rendement, _, _ = st.columns(7)
+with col_label:     st.markdown("<br>**Année courante**", unsafe_allow_html=True)
+with col_km:        st.markdown(kpi_bloc_format(fmt_float(kpi.get("km_annee"),               decimales=0, suffixe=" km"),         COULEURS["km"]),         unsafe_allow_html=True)
+with col_nrj:       st.markdown(kpi_bloc_format(fmt_float(kpi.get("energie_annee"),          decimales=1, suffixe=" kWh"),        COULEURS["energie"]),    unsafe_allow_html=True)
+with col_conso:     st.markdown(kpi_bloc_format(fmt_float(kpi.get("conso_kwh_100km_annee"), decimales=1, suffixe=" kWh/100km"), COULEURS["conso"]),      unsafe_allow_html=True)
+with col_rendement: st.markdown(kpi_bloc_format(fmt_float(km_par_kwh(kpi.get("km_annee"),   kpi.get("energie_annee")),           decimales=1, suffixe=" km/kWh"), COULEURS["rendementk"]), unsafe_allow_html=True)
 
 # =============================================================================
 # Graphique — énergie ajoutée par jour (30 derniers jours)

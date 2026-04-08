@@ -442,3 +442,12 @@ class Tools:
             Tools.km_to_miles(102766.943, 0)    → 63854.0
         """
         return round(float(km) / 1.609344, decimales)
+    
+    @staticmethod
+    def km_par_kwh(km: float, kwh: float) -> float|None:
+        """
+        retourne le rendement kilométrique en km/kWh, ou 0 si kWh est nul ou None.
+        """
+        if not km or not kwh or float(kwh) == 0:
+            return None
+        return round(float(km) / float(kwh), 1)

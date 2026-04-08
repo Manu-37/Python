@@ -1,15 +1,18 @@
 from sysclasses.tools import Tools
 
 # Helpers de formatage — définis dans Tools, réexportés ici pour les pages
-fmt_float = Tools.fmt_float
-fmt_date  = Tools.fmt_date
+fmt_float  = Tools.fmt_float
+fmt_date   = Tools.fmt_date
+km_par_kwh = Tools.km_par_kwh
 
 # Design system — spécifique à ce projet Streamlit
 COULEURS = {
-    "km"     : "#4f7ff7",
-    "energie": "#ebba19",
-    "conso"  : "#3cc343",
-    "titre"  : "#FFFFFF",
+    "km"        : "#4f7ff7",
+    "energie"   : "#ebba19",
+    "conso"     : "#3cc343",
+    "rendementk": "#811e9cff",
+    "titre"     : "#FFFFFF",
+    "delta_zero": "#4fc3f7",
 }
 
 FONT_SIZE = {
@@ -17,6 +20,34 @@ FONT_SIZE = {
     "kpi_small": "1.00rem",
     "label"    : "1.00rem",
 }
+
+
+def delta_couleur(val: float) -> str:
+    """Vert si positif, rouge si négatif, bleu si nul, blanc si None."""
+    if val is None:
+        return COULEURS["titre"]
+    if val > 0:
+        return "#28a745"
+    if val < 0:
+        return "#dc3545"
+    return COULEURS["delta_zero"]
+
+
+def delta_texte(val: float, decimales: int = 1, suffixe: str = "") -> str:
+    """
+    Formate un delta avec flèche directionnelle :
+        val > 0  → ↑ valeur
+        val < 0  → ↓ valeur absolue
+        val == 0 → → 0
+        val is None → chaîne vide
+    """
+    if val is None:
+        return ""
+    if val > 0:
+        return f"↑ {fmt_float(val, decimales, suffixe)}"
+    if val < 0:
+        return f"↓ {fmt_float(abs(val), decimales, suffixe)}"
+    return f"→ {fmt_float(0, decimales, suffixe)}"
 
 
 def kpi_bloc_format(
