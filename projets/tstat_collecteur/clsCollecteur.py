@@ -279,6 +279,11 @@ class clsCollecteur:
 
         # --- Snapshot (SNP) ---
         oSNP = self._mapper_snp(donnees)
+
+        # Lire le dernier état de charge AVANT l'insert
+        # pour détecter une transition Charging→Disconnected (coupure réseau)
+        dernier_etat_charge = self._get_dernier_etat_charge(oSNP.ogEngine, self._veh_id)
+
         oSNP.insert()
         snp_id = oSNP.snp_id
 
@@ -301,70 +306,121 @@ class clsCollecteur:
         # --- REFRESH vue matérialisée si fin de session de charge ---
         # Exécuté APRÈS le commit — hors transaction DML.
         # CONCURRENTLY : pas de lock exclusif, dashboard lisible pendant le refresh.
-        if etat_charge in ETATS_FIN_SESSION:
+        #
+        # Deux cas déclencheurs :
+        #   1. etat_charge in ETATS_FIN_SESSION : fin de session normale (Complete/Stopped)
+        #   2. transition_debranche : dernier état connu = Charging, état actuel = Disconnected
+        #      → fin de session manquée pendant une coupure réseau (outage)
+        #      Critère == "Charging" (pas "in ETATS_BRANCHE") : Complete/Stopped ont déjà
+        #      déclenché leur refresh — pas de double refresh parasite.
+        transition_debranche = (
+            dernier_etat_charge == "Charging"
+            and etat_charge not in ETATS_BRANCHE
+        )
+
+        if etat_charge in ETATS_FIN_SESSION or transition_debranche:
+            if transition_debranche and etat_charge not in ETATS_FIN_SESSION:
+                self._log.info(
+                    f"clsCollecteur | Transition Charging→Disconnected détectée "
+                    f"(dernier={dernier_etat_charge!r}, actuel={etat_charge!r}) — "
+                    "REFRESH déclenché (fin de session probablement manquée pendant coupure réseau)."
+                )
             self._refresh_vue_sessions(oSNP.ogEngine)
 
         return snp_id
 
+    def _get_dernier_etat_charge(self, engine, veh_id: int) -> str | None:
+        """
+        Retourne le dernier chg_state connu pour ce véhicule.
+        Utilisé pour détecter une transition Charging→Disconnected manquée
+        pendant une coupure réseau (outage).
+
+        Critère d'appel : si le résultat est "Charging" ET que l'état actuel
+        est Disconnected, une fin de session a été manquée → REFRESH déclenché.
+
+        Pas de borne temporelle — Complete/Stopped ont déjà déclenché leur
+        refresh, donc seul "Charging" produit un refresh additionnel.
+
+        Retourne None si aucune donnée de charge en base pour ce véhicule.
+        """
+        ph  = engine.placeholder
+        sql = (
+            "SELECT c.chg_state "
+            "FROM   public.t_snapshot_snp s "
+            "JOIN   public.t_charge_chg   c ON c.snp_id = s.snp_id "
+            f"WHERE  s.veh_id = {ph} "
+            "ORDER  BY s.snp_timestamp DESC "
+            "LIMIT  1"
+        )
+        rows = engine.execute_select(sql, (veh_id,))
+        return rows[0]["chg_state"] if rows else None
+
     def _refresh_vue_sessions(self, engine):
-            """
-            Déclenche le REFRESH des trois MV de charge via fct_refresh_all_charge_mv().
+        """
+        Déclenche le REFRESH des quatre MV de charge via fct_refresh_all_charge_mv().
 
-            Codes retour PostgreSQL :
-                'OK'       — MV1 + MV2 + MV3 rafraîchies
-                'ERR_MV1'  — échec MV1 (MV2 et MV3 non tentées)
-                'ERR_MV2'  — MV1 OK, échec MV2 (MV3 non tentée)
-                'ERR_MV3'  — MV1 + MV2 OK, échec mv_charge_journee
+        Codes retour PostgreSQL :
+            'OK'       — MV1 + MV2 + MV3 + MV4 rafraîchies
+            'ERR_MV1'  — échec MV1 (MV2, MV3, MV4 non tentées)
+            'ERR_MV2'  — MV1 OK, échec MV2 (MV3, MV4 non tentées)
+            'ERR_MV3'  — MV1 + MV2 OK, échec MV3 (MV4 non tentée)
+            'ERR_MV4'  — MV1 + MV2 + MV3 OK, échec mv_journee
 
-            En cas d'échec partiel ou total, on logue un warning sans interrompre
-            le collecteur — le snapshot est déjà committé, les MV seront
-            rafraîchies au prochain cycle Complete/Stopped.
-            """
-            self._log.info(
-                "clsCollecteur | Déclenchement REFRESH "
-                "mv_charge_sessions + mv_charge_sessions_ext + mv_charge_journee."
+        En cas d'échec partiel ou total, on logue un warning sans interrompre
+        le collecteur — le snapshot est déjà committé, les MV seront
+        rafraîchies au prochain cycle Complete/Stopped ou par pg_cron.
+        """
+        self._log.info(
+            "clsCollecteur | Déclenchement REFRESH "
+            "mv_charge_sessions + mv_charge_sessions_ext + mv_charge_journee + mv_journee."
+        )
+        try:
+            res = engine.execute_select(
+                "SELECT public.fct_refresh_all_charge_mv() AS statut;"
             )
-            try:
-                res = engine.execute_select(
-                    "SELECT public.fct_refresh_all_charge_mv() AS statut;"
+            statut = res[0]["statut"] if res else "UNKNOWN"
+
+            if statut == "OK":
+                self._log.info(
+                    "clsCollecteur | MV1 + MV2 + MV3 + MV4 rafraîchies "
+                    "(transition fin de session détectée)."
                 )
-                statut = res[0]["statut"] if res else "UNKNOWN"
-
-                if statut == "OK":
-                    self._log.info(
-                        "clsCollecteur | MV1 + MV2 + MV3 rafraîchies "
-                        "(transition fin de session détectée)."
-                    )
-                elif statut == "ERR_MV1":
-                    self._log.warning(
-                        "clsCollecteur | Échec REFRESH mv_charge_sessions (MV1) — "
-                        "MV2 et MV3 non tentées. "
-                        "Sera rafraîchie au prochain cycle Complete/Stopped."
-                    )
-                elif statut == "ERR_MV2":
-                    self._log.warning(
-                        "clsCollecteur | MV1 OK — Échec REFRESH mv_charge_sessions_ext (MV2) — "
-                        "mv_charge_journee non tentée. "
-                        "Sera rafraîchie au prochain cycle Complete/Stopped."
-                    )
-                elif statut == "ERR_MV3":
-                    self._log.warning(
-                        "clsCollecteur | MV1 + MV2 OK — Échec REFRESH mv_charge_journee (MV3). "
-                        "Sera rafraîchie au prochain cycle Complete/Stopped."
-                    )
-                else:
-                    self._log.warning(
-                        f"clsCollecteur | Statut REFRESH inattendu : '{statut}' — "
-                        "vérifier fct_refresh_all_charge_mv()."
-                    )
-
-                engine.commit()
-
-            except Exception as e:
+            elif statut == "ERR_MV1":
                 self._log.warning(
-                    f"clsCollecteur | Échec appel fct_refresh_all_charge_mv() : {e} — "
-                    "MV sera rafraîchie au prochain cycle Complete/Stopped."
+                    "clsCollecteur | Échec REFRESH mv_charge_sessions (MV1) — "
+                    "MV2, MV3 et MV4 non tentées. "
+                    "Sera rafraîchie au prochain cycle Complete/Stopped."
                 )
+            elif statut == "ERR_MV2":
+                self._log.warning(
+                    "clsCollecteur | MV1 OK — Échec REFRESH mv_charge_sessions_ext (MV2) — "
+                    "MV3 et MV4 non tentées. "
+                    "Sera rafraîchie au prochain cycle Complete/Stopped."
+                )
+            elif statut == "ERR_MV3":
+                self._log.warning(
+                    "clsCollecteur | MV1 + MV2 OK — Échec REFRESH mv_charge_journee (MV3) — "
+                    "MV4 non tentée. "
+                    "Sera rafraîchie au prochain cycle Complete/Stopped."
+                )
+            elif statut == "ERR_MV4":
+                self._log.warning(
+                    "clsCollecteur | MV1 + MV2 + MV3 OK — Échec REFRESH mv_journee (MV4). "
+                    "Sera rafraîchie par pg_cron à 1h ou au prochain cycle Complete/Stopped."
+                )
+            else:
+                self._log.warning(
+                    f"clsCollecteur | Statut REFRESH inattendu : '{statut}' — "
+                    "vérifier fct_refresh_all_charge_mv()."
+                )
+
+            engine.commit()
+
+        except Exception as e:
+            self._log.warning(
+                f"clsCollecteur | Échec appel fct_refresh_all_charge_mv() : {e} — "
+                "MV sera rafraîchie au prochain cycle Complete/Stopped."
+            )
     # --------------------------------------------------
     # Mappers Tesla → entités
     # --------------------------------------------------

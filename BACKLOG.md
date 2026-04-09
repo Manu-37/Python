@@ -6,6 +6,21 @@
 
 ---
 
+## 📊 Vision de synthèse
+
+| # | Tâche | Priorité | Statut |
+|---|---|---|---|
+| #5 | Refactoring architecture — dette technique | 🔴 Haute | À faire |
+| #9 | `mv_journee` — vue quotidienne complète | 🔴 Haute | À faire |
+| #2 | Page charge | 🟡 Normale | Bloqué par #5 |
+| #3 | Référentiel colonnes multilingue | 🟡 Normale | À faire |
+| #4 | Politique rétention snapshots | 🟡 Normale | À faire |
+| #6 | Refonte `clsTableMetadata` | 🟢 Basse | Différé |
+| #7 | OAuth2 via Freebox | 🟢 Basse | À faire |
+| #8 | `t_lieu_liu` — lieux manuels | 🟢 Basse | Différé |
+
+---
+
 ## 🏗️ Architecture — Principes actés
 
 | Principe | Règle |
@@ -20,19 +35,20 @@
 | Rôle | Fichier |
 |---|---|
 | Lanceur | `run_tstat_analyse.py` — subprocess + `os.environ` + `cwd` fixé |
-| Bootstrap | `cache.py/_bootstrap()` — singletons dans le bon processus |
-| Cache | `cache.py` — `@st.cache_resource` / `@st.cache_data(ttl=300)` |
-| Design system | `utilis.py` — `COULEURS`, `FONT_SIZE`, `kpi_bloc_format`, réexports `fmt_*`, `km_par_kwh` |
+| Bootstrap | `cache_ressources.py/_bootstrap()` — singletons dans le bon processus |
+| Cache | `cache_charge.py` — `@st.cache_resource` / `@st.cache_data(ttl=300)` |
+| Design system | `utilis.py` — `COULEURS`, `FONT_SIZE`, `kpi_bloc_format`, `delta_texte`, `delta_couleur`, réexports `fmt_*`, `km_par_kwh` |
 | Stats sessions | `clsTstatCharge` — source `mv_charge_sessions_ext` |
 | Stats journalières | `clsTstatCharge` — source `mv_charge_journee` (MV3) |
 | Contrôleurs | `controllers/` — un fichier par page (à implémenter — #5) |
 
 ### Vues matérialisées
-| MV | Source | Rôle |
-|---|---|---|
-| `mv_charge_sessions` | `t_snapshot_snp` + `t_charge_chg` | Sessions brutes |
-| `mv_charge_sessions_ext` | MV1 | + distance inter-charges (LAG) |
-| `mv_charge_journee` | MV2 | Synthèse quotidienne — agrégation par jour de début |
+| # | MV | Source | Rôle |
+|---|---|---|---|
+| MV1 | `mv_charge_sessions` | `t_snapshot_snp` + `t_charge_chg` | Sessions brutes |
+| MV2 | `mv_charge_sessions_ext` | MV1 | + distance inter-charges (LAG) |
+| MV3 | `mv_charge_journee` | MV2 | Synthèse par jour de charge |
+| MV4 | `mv_journee` | `t_snapshot_snp` | Synthèse quotidienne complète (à créer — #9) |
 
 > Données exclues : 23 et 24/03/2026 (premiers jours de collecte, incomplets).
 > Prévu mi-avril : exclure tout le mois de mars.
@@ -41,17 +57,7 @@
 
 ## 🔄 En cours
 
-### #1 — Finalisation page d'accueil 🔴
-**Scope :** `accueil.py` + `clsTstatCharge` + `utilis.py`
-
-**Contexte :** Page opérationnelle avec données réelles. Thème sombre actif.
-Design system `utilis.py` en place. Il reste à valider visuellement le rendu
-final et ajouter `km_par_kwh` dans l'affichage.
-
-**Sous-tâches restantes :**
-- [ ] Valider `km_par_kwh` ajouté par Emmanuel dans `Tools` + `utilis.py`
-- [ ] Intégrer `km_par_kwh` dans l'affichage (journée, mois, année)
-- [ ] Valider visuellement que tout tient sur un écran 27" 2K
+*(aucune tâche en cours)*
 
 ---
 
@@ -68,8 +74,25 @@ final et ajouter `km_par_kwh` dans l'affichage.
 - Réduire `accueil.py` à du pur `st.*` — zéro calcul, zéro logique métier
 - Supprimer `clsTstatCharge` si vidée de son contenu
 
+### #9 — `mv_journee` — vue quotidienne complète 🔴
+**Scope :** Nouvelle MV4 basée sur `t_snapshot_snp` — à faire AVANT graphique km
+
+**Contexte :** `mv_charge_journee` (MV3) n'a des entrées que les jours avec au moins une charge.
+Pour afficher le graphique jusqu'à aujourd'hui et superposer les km réels par jour,
+il faut une vue ancrée sur les snapshots, pas sur les sessions de charge.
+
+**Travaux :**
+- Créer `mv_journee` depuis `t_snapshot_snp` GROUP BY (veh_id, DATE(snp_timestamp))
+  - `km_journee` = (MAX(odometer) − MIN(odometer)) × 1,60934
+  - `nb_snapshots` = COUNT(*) — proxy de présence de données
+  - LEFT JOIN `mv_charge_journee` pour les données de charge du jour
+- Ajouter `fct_refresh_mv_journee` + intégrer dans l'orchestrateur (ERR_MV4)
+- Mettre à jour `clsTstatJournee` (issue de #5) pour utiliser `mv_journee`
+- Graphique `accueil.py` : étendre jusqu'à `CURRENT_DATE` via `generate_series`, ajouter ligne km superposée
+
 ### #2 — Page charge 🟡
 **Scope :** `01_Charge.py` + contrôleur + filter + chart + table
+**Dépend de :** #5
 
 ### #3 — Référentiel colonnes multilingue 🟡
 **Scope :** Remplacement des dicts UI rustine par un vrai référentiel multilingue
@@ -102,10 +125,10 @@ final et ajouter `km_par_kwh` dans l'affichage.
 | — | Architecture Streamlit | Structure validée, cache opérationnel, bootstrap subprocess |
 | — | Thème sombre | `config.toml` + `cwd` fixé dans `run_tstat_analyse.py` |
 | — | MV3 `mv_charge_journee` | Synthèse quotidienne + refresh orchestré + collecteur mis à jour |
-| — | Design system `utilis.py` | `COULEURS`, `FONT_SIZE`, `kpi_bloc_format()` |
-| — | `fmt_float` / `fmt_date` dans `Tools` | Génériques — réexportés depuis `utilis.py` |
-| — | Sélecteur véhicule | `st.selectbox` + `get_liste_vehicules()` dans `cache.py` |
-| #1 | Page d'accueil v1→v2 | KPIs journée/mois/année, capacité 7j avec delta, graphique énergie |
+| — | Design system `utilis.py` | `COULEURS`, `FONT_SIZE`, `kpi_bloc_format`, `delta_texte`, `delta_couleur` |
+| — | `fmt_float` / `fmt_date` / `km_par_kwh` dans `Tools` | Génériques — réexportés depuis `utilis.py` |
+| — | Sélecteur véhicule | `st.selectbox` + `get_liste_vehicules()` dans `cache_charge.py` |
+| #1 | Page d'accueil v1→v2 | KPIs journée/mois/année, capacité 7j avec delta, rendement km, graphique énergie |
 
 ---
 

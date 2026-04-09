@@ -5,11 +5,14 @@
 -- Odométre début/fin de session (en miles — conversion km à l'affichage).
 -- REFRESH CONCURRENTLY via fct_refresh_mv_charge_sessions().
 --
--- Filtre sessions fantômes :
---   Les sessions où MAX(chg_power) = 0 sont exclues.
---   chg_power = 0 signifie qu'aucun watt n'a été échangé durant toute la
---   session — le câble était branché mais le chargeur ne délivrait rien.
---   Justification physique : chg_power > 0 ↔ chg_current > 0 ↔ charge réelle.
+-- Filtre sessions fantômes (deux critères cumulatifs) :
+--   1. puissance_max > 0 : exclut les sessions où aucun watt n'a été échangé
+--      (câble branché, BMS actif, chargeur ne délivrant rien).
+--      Justification physique : chg_power > 0 ↔ chg_current > 0 ↔ charge réelle.
+--   2. fin_session > debut_session : exclut les sessions à snapshot unique
+--      (durée nulle). Tesla rapporte dans ce cas une énergie résiduelle du BMS,
+--      pas une charge réelle — l'énergie affichée est celle accumulée avant
+--      le branchement, pas pendant.
 --
 -- Début de session :
 --   debut_session, snp_id_debut, odometer_debut et soc_debut_pct sont calculés
@@ -118,6 +121,10 @@ WHERE energie_ajoutee_kwh > 0.1
   AND puissance_max > 0
   -- puissance_max > 0 : exclut les sessions fantômes
   -- (câble branché, BMS actif, zéro watt échangé)
+  AND fin_session > debut_session
+  -- fin_session > debut_session : exclut les sessions à snapshot unique
+  -- (durée nulle — Tesla rapporte une énergie résiduelle du BMS,
+  --  pas une charge réelle)
 
 WITH DATA;
 
