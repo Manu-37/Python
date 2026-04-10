@@ -8,16 +8,16 @@
 
 ## 📊 Vision de synthèse
 
-| # | Tâche | Priorité | Statut |
-|---|---|---|---|
-| #5 | Refactoring architecture — dette technique | 🔴 Haute | À faire |
-| #9 | `mv_journee` — vue quotidienne complète | 🔴 Haute | À faire |
-| #2 | Page charge | 🟡 Normale | Bloqué par #5 |
-| #3 | Référentiel colonnes multilingue | 🟡 Normale | À faire |
-| #4 | Politique rétention snapshots | 🟡 Normale | À faire |
-| #6 | Refonte `clsTableMetadata` | 🟢 Basse | Différé |
-| #7 | OAuth2 via Freebox | 🟢 Basse | À faire |
-| #8 | `t_lieu_liu` — lieux manuels | 🟢 Basse | Différé |
+| N  | Tâche                                      | Priorité | Statut        |
+|----|--------------------------------------------|----------|---------------|
+| #5 | Refactoring architecture — dette technique | HAUTE    | A faire       |
+| #9 | `mv_journee` — vue quotidienne complète    | HAUTE    | Termine       |
+| #2 | Page charge                                | Normale  | Bloque par #5 |
+| #3 | Référentiel colonnes multilingue           | Normale  | A faire       |
+| #4 | Politique rétention snapshots              | Normale  | A faire       |
+| #6 | Refonte `clsTableMetadata`                 | Basse    | Differe       |
+| #7 | OAuth2 via Freebox                         | Basse    | A faire       |
+| #8 | `t_lieu_liu` — lieux manuels               | Basse    | Differe       |
 
 ---
 
@@ -48,7 +48,7 @@
 | MV1 | `mv_charge_sessions` | `t_snapshot_snp` + `t_charge_chg` | Sessions brutes |
 | MV2 | `mv_charge_sessions_ext` | MV1 | + distance inter-charges (LAG) |
 | MV3 | `mv_charge_journee` | MV2 | Synthèse par jour de charge |
-| MV4 | `mv_journee` | `t_snapshot_snp` | Synthèse quotidienne complète (à créer — #9) |
+| MV4 | `mv_journee` | `t_snapshot_snp` | Synthèse quotidienne complète |
 
 > Données exclues : 23 et 24/03/2026 (premiers jours de collecte, incomplets).
 > Prévu mi-avril : exclure tout le mois de mars.
@@ -73,22 +73,6 @@
 - Créer `controllers/ctrl_accueil.py` — assembleur + formatage final (conversions miles→km, calcul conso)
 - Réduire `accueil.py` à du pur `st.*` — zéro calcul, zéro logique métier
 - Supprimer `clsTstatCharge` si vidée de son contenu
-
-### #9 — `mv_journee` — vue quotidienne complète 🔴
-**Scope :** Nouvelle MV4 basée sur `t_snapshot_snp` — à faire AVANT graphique km
-
-**Contexte :** `mv_charge_journee` (MV3) n'a des entrées que les jours avec au moins une charge.
-Pour afficher le graphique jusqu'à aujourd'hui et superposer les km réels par jour,
-il faut une vue ancrée sur les snapshots, pas sur les sessions de charge.
-
-**Travaux :**
-- Créer `mv_journee` depuis `t_snapshot_snp` GROUP BY (veh_id, DATE(snp_timestamp))
-  - `km_journee` = (MAX(odometer) − MIN(odometer)) × 1,60934
-  - `nb_snapshots` = COUNT(*) — proxy de présence de données
-  - LEFT JOIN `mv_charge_journee` pour les données de charge du jour
-- Ajouter `fct_refresh_mv_journee` + intégrer dans l'orchestrateur (ERR_MV4)
-- Mettre à jour `clsTstatJournee` (issue de #5) pour utiliser `mv_journee`
-- Graphique `accueil.py` : étendre jusqu'à `CURRENT_DATE` via `generate_series`, ajouter ligne km superposée
 
 ### #2 — Page charge 🟡
 **Scope :** `01_Charge.py` + contrôleur + filter + chart + table
@@ -117,18 +101,19 @@ il faut une vue ancrée sur les snapshots, pas sur les sessions de charge.
 
 ## ✅ Terminé
 
-| # | Tâche | Notes |
-|---|---|---|
-| — | Prise en main repo Git | Framework sysclasses, BaseRef_Manager, tstat_collecteur, db |
-| — | Refonte logs | `clsLOG.py` — version finale |
-| — | snp_soc + vue matérialisée | `clsFrequenceManager.py` + `clsCollecteur.py` — versions finales |
-| — | Architecture Streamlit | Structure validée, cache opérationnel, bootstrap subprocess |
-| — | Thème sombre | `config.toml` + `cwd` fixé dans `run_tstat_analyse.py` |
-| — | MV3 `mv_charge_journee` | Synthèse quotidienne + refresh orchestré + collecteur mis à jour |
-| — | Design system `utilis.py` | `COULEURS`, `FONT_SIZE`, `kpi_bloc_format`, `delta_texte`, `delta_couleur` |
-| — | `fmt_float` / `fmt_date` / `km_par_kwh` dans `Tools` | Génériques — réexportés depuis `utilis.py` |
-| — | Sélecteur véhicule | `st.selectbox` + `get_liste_vehicules()` dans `cache_charge.py` |
-| #1 | Page d'accueil v1→v2 | KPIs journée/mois/année, capacité 7j avec delta, rendement km, graphique énergie |
+| N  | Tâche                                          | Notes                                                                        |
+|----|------------------------------------------------|------------------------------------------------------------------------------|
+| —  | Prise en main repo Git                         | Framework sysclasses, BaseRef_Manager, tstat_collecteur, db                  |
+| —  | Refonte logs                                   | `clsLOG.py` — version finale                                                 |
+| —  | snp_soc + vue matérialisée                     | `clsFrequenceManager.py` + `clsCollecteur.py` — versions finales             |
+| —  | Architecture Streamlit                         | Structure validée, cache opérationnel, bootstrap subprocess                  |
+| —  | Theme sombre                                   | `config.toml` + `cwd` fixé dans `run_tstat_analyse.py`                       |
+| —  | MV3 `mv_charge_journee`                        | Synthèse quotidienne + refresh orchestré + collecteur mis à jour             |
+| —  | Design system `utilis.py`                      | `COULEURS`, `FONT_SIZE`, `kpi_bloc_format`, `delta_texte`, `delta_couleur`   |
+| —  | `fmt_float` / `fmt_date` / `km_par_kwh`        | Génériques — réexportés depuis `utilis.py`                                   |
+| —  | Selecteur véhicule                             | `st.selectbox` + `get_liste_vehicules()` dans `cache_charge.py`              |
+| #1 | Page d'accueil v1->v2                          | KPIs journée/mois/année, capacité 7j avec delta, rendement km, graphique     |
+| #9 | `mv_journee` + graphique km                    | MV4 snapshots, détection coupure réseau collecteur, double axe Y accueil     |
 
 ---
 
