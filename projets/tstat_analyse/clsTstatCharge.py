@@ -558,16 +558,18 @@ class clsTstatCharge(clsTstatBase):
         date_debut: str = None,
     ) -> list[dict]:
         """
-        Énergie ajoutée par jour depuis date_debut.
-        Source : mv_charge_journee — une ligne par jour, pas d'agrégation supplémentaire.
+        Énergie ajoutée et km parcourus par jour depuis date_debut.
+        Source : mv_journee (MV4) — couvre tous les jours avec snapshots,
+        y compris les jours de conduite sans recharge.
 
         Retourne par jour :
             periode              — date_jour (DATE)
-            energie_totale_kwh   — somme des énergies (alias pour compatibilité accueil.py)
+            energie_totale_kwh   — énergie ajoutée (kWh), NULL si pas de recharge
+            km_journee           — km parcourus (déjà en km), NULL si pas de snapshot
         """
-        ph        = self.ogEngine.placeholder
-        params    = []
-        where_veh = ""
+        ph         = self.ogEngine.placeholder
+        params     = []
+        where_veh  = ""
         where_date = ""
         if veh_id is not None:
             where_veh = f"AND veh_id = {ph}"
@@ -578,9 +580,10 @@ class clsTstatCharge(clsTstatBase):
 
         sql = f"""
             SELECT
-                date_jour                   AS periode,
-                energie_ajoutee_kwh         AS energie_totale_kwh
-            FROM {self._SCHEMA}.{self._MV_JOURNEE}
+                date_jour               AS periode,
+                energie_ajoutee_kwh     AS energie_totale_kwh,
+                km_journee
+            FROM {self._SCHEMA}.mv_journee
             WHERE TRUE
               {where_veh}
               {where_date}

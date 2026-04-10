@@ -197,8 +197,9 @@ st.divider()
 st.subheader(f"Énergie rechargée par jour — {NB_JOURS} derniers jours")
 
 if serie:
-    periodes = [row["periode"]                for row in serie]
-    energies = [row.get("energie_totale_kwh") for row in serie]
+    periodes    = [row["periode"]                for row in serie]
+    energies    = [row.get("energie_totale_kwh") for row in serie]
+    kms         = [row.get("km_journee") for row in serie]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -208,12 +209,22 @@ if serie:
         marker_color  = COULEURS["energie"],
         hovertemplate = "%{x|%d/%m/%Y}<br>%{y:.1f} kWh<extra></extra>",
     ))
+    fig.add_trace(go.Scatter(
+        x             = periodes,
+        y             = kms,
+        yaxis         = "y2",
+        name          = "Kilométrage (km)",
+        mode          = "lines+markers",
+        marker_color  = COULEURS["km"],
+        hovertemplate = "%{x|%d/%m/%Y}<br>%{y:.0f} km<extra></extra>",
+    ))
     fig.update_layout(
         height        = 280,
         margin        = dict(l=40, r=20, t=10, b=40),
         xaxis_title   = None,
-        yaxis_title   = "kWh",
-        showlegend    = False,
+        yaxis  = dict(title="kWh", side="left", rangemode="tozero"),
+        yaxis2 = dict(title="km",  side="right", overlaying="y", showgrid=False, rangemode="tozero" ),   
+        showlegend    = True,
         paper_bgcolor = "rgba(0,0,0,0)",
         plot_bgcolor  = "rgba(0,0,0,0)",
     )
