@@ -1,10 +1,11 @@
+from abc import ABC, abstractmethod
 from sysclasses.clsLOG import clsLOG
 
 
-class clsStatBase:
+class clsDB_ABS(ABC) :
     """
-    Classe de base générique pour les analyses statistiques.
-    Stockée dans sysclasses — indépendante de tout domaine métier.
+    Classe de base générique socle commun entités + requêtes
+      — indépendante de tout domaine métier.
 
     Fournit :
         - La connexion au moteur SQL via nom symbolique (clsDBAManager)
@@ -15,7 +16,7 @@ class clsStatBase:
     Les classes filles écrivent le SQL métier et utilisent ogEngine.execute_select().
 
     Usage :
-        class clsChargeStats(clsStatBase):
+        class clsChargeStats(clsDB_ABS):
             def __init__(self):
                 super().__init__("TSTAT_DATA")
     """
@@ -31,6 +32,16 @@ class clsStatBase:
         "semestre"  : None,   # cas spécial — voir _date_trunc
         "annee"     : "year",
     }
+
+    # --- Contrat de variables de classe ---
+
+    @property
+    @abstractmethod
+    def _schema(self): pass
+
+    @property
+    @abstractmethod
+    def _table(self): pass
 
     def __init__(self, db_symbolic_name: str):
         from sysclasses.clsDBAManager import clsDBAManager
@@ -119,7 +130,7 @@ class clsStatBase:
 
             else:
                 self.ogLog.warning(
-                    f"clsStatBase._build_where | Opérateur inconnu ignoré : '{operateur}' "
+                    f"clsDB_ABS._build_where | Opérateur inconnu ignoré : '{operateur}' "
                     f"sur colonne '{colonne}'"
                 )
 
@@ -153,7 +164,7 @@ class clsStatBase:
         if granularite not in self._GRANULARITES:
             valides = ", ".join(self._GRANULARITES.keys())
             raise ValueError(
-                f"clsStatBase._date_trunc | Granularité '{granularite}' inconnue. "
+                f"clsDB_ABS._date_trunc | Granularité '{granularite}' inconnue. "
                 f"Valeurs acceptées : {valides}"
             )
 

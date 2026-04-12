@@ -1,10 +1,11 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+from .clsDB_ABS import clsDB_ABS
 from sysclasses.clsCrypto import clsCrypto
 from sysclasses.exceptions import ErreurValidationBloquante, AvertissementValidation
-from db.clsTableMetadata import clsTableMetadata
+from .clsTableMetadata import clsTableMetadata
 
 
-class clsEntity_ABS(ABC):
+class clsEntity_ABS(clsDB_ABS):
     """
     Classe abstraite socle de toutes les entités métier.
     Les classes filles DOIVENT définir : _schema, _table, _pk, ctrl_valeurs().
@@ -22,14 +23,6 @@ class clsEntity_ABS(ABC):
     """
 
     # --- Contrat de variables de classe ---
-
-    @property
-    @abstractmethod
-    def _schema(self): pass
-
-    @property
-    @abstractmethod
-    def _table(self): pass
 
     @property
     @abstractmethod

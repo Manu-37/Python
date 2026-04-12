@@ -8,16 +8,17 @@
 
 ## 📊 Vision de synthèse
 
-| N  | Tâche                                      | Priorité | Statut        |
-|----|--------------------------------------------|----------|---------------|
-| #5 | Refactoring architecture — dette technique | HAUTE    | A faire       |
-| #9 | `mv_journee` — vue quotidienne complète    | HAUTE    | Termine       |
-| #2 | Page charge                                | Normale  | Bloque par #5 |
-| #3 | Référentiel colonnes multilingue           | Normale  | A faire       |
-| #4 | Politique rétention snapshots              | Normale  | A faire       |
-| #6 | Refonte `clsTableMetadata`                 | Basse    | Differe       |
-| #7 | OAuth2 via Freebox                         | Basse    | A faire       |
-| #8 | `t_lieu_liu` — lieux manuels               | Basse    | Differe       |
+| N   | Tâche                                      | Priorité | Statut        |
+|-----|--------------------------------------------|----------|---------------|
+| #5  | Refactoring architecture — dette technique | HAUTE    | Terminé       |
+| #11 | Restructuration `__init__.py`              | HAUTE    | Terminé       |
+| #2  | Page charge                                | Normale  | Bloque par #5 |
+| #10 | Suivi pg_cron — base + entités + UI        | Normale  | A faire       |
+| #4  | Politique rétention snapshots              | Normale  | A faire       |
+| #7  | OAuth2 via Freebox                         | Basse    | A faire       |
+| #3  | Référentiel colonnes multilingue           | Basse    | Differe       |
+| #6  | Refonte `clsTableMetadata`                 | Basse    | Differe       |
+| #8  | `t_lieu_liu` — lieux manuels               | Basse    | Differe       |
 
 ---
 
@@ -35,12 +36,16 @@
 | Rôle | Fichier |
 |---|---|
 | Lanceur | `run_tstat_analyse.py` — subprocess + `os.environ` + `cwd` fixé |
-| Bootstrap | `cache_ressources.py/_bootstrap()` — singletons dans le bon processus |
-| Cache | `cache_charge.py` — `@st.cache_resource` / `@st.cache_data(ttl=300)` |
+| Bootstrap | `cache_ressources.py` — singletons dans le bon processus |
+| Cache | `cache_charge.py` — `@st.cache_data(ttl=300)`, importe via `projets.tstat_analyse` |
+| Contrôleur accueil | `controllers/ctrl_accueil.py` — `kpi_home()`, `serie_energie_par_jour()` |
 | Design system | `utilis.py` — `COULEURS`, `FONT_SIZE`, `kpi_bloc_format`, `delta_texte`, `delta_couleur`, réexports `fmt_*`, `km_par_kwh` |
-| Stats sessions | `clsTstatCharge` — source `mv_charge_sessions_ext` |
-| Stats journalières | `clsTstatCharge` — source `mv_charge_journee` (MV3) |
-| Contrôleurs | `controllers/` — un fichier par page (à implémenter — #5) |
+
+### Couche DB — classes Q (lecture seule, `db/db_tstat_data/`)
+| Classe | MV source | Rôle |
+|---|---|---|
+| `clsQ_charge_sessions_ext` | MV2 | Sessions brutes — périodes, capacité, kilométrage |
+| `clsQ_journee` | MV4 | KPI journaliers — `journee()`, `donnees_periode()`, `moyenne_capacite_glissante()`, `energie_par_jour()`, `derniere_capacite()` |
 
 ### Vues matérialisées
 | # | MV | Source | Rôle |
@@ -63,23 +68,19 @@
 
 ## 📋 À faire
 
-### #5 — Refactoring architecture — dette technique 🔴
-**Scope :** Architecture globale — à faire AVANT la page #2
-
-**Travaux identifiés :**
-- Découper `clsTstatCharge` en deux classes :
-  - `clsTstatSessionsExt` — source `mv_charge_sessions_ext`
-  - `clsTstatJournee` — source `mv_charge_journee`
-- Créer `controllers/ctrl_accueil.py` — assembleur + formatage final (conversions miles→km, calcul conso)
-- Réduire `accueil.py` à du pur `st.*` — zéro calcul, zéro logique métier
-- Supprimer `clsTstatCharge` si vidée de son contenu
-
 ### #2 — Page charge 🟡
 **Scope :** `01_Charge.py` + contrôleur + filter + chart + table
 **Dépend de :** #5
 
-### #3 — Référentiel colonnes multilingue 🟡
-**Scope :** Remplacement des dicts UI rustine par un vrai référentiel multilingue
+### #10 — Suivi pg_cron — base + entités + UI 🟡
+**Scope :** BaseRef_Manager — nouvelle section de monitoring des rafraîchissements des MV
+
+**Contexte :** pg_cron stocke l'historique d'exécution des jobs dans sa propre base `postgre`, schéma `cron`. L'objectif est d'exposer ces données dans le BaseRef_Manager pour surveiller les refreshes programmés des vues matérialisées.
+
+**Travaux identifiés :**
+1. **Connexion PostgreSQL** — déclarer la base `postgre` (schéma `cron`) dans le gestionnaire de bases (`clsDBAManager`) avec le compte `ut_tstat`. Vérifier préalablement que `ut_tstat` a bien les droits `SELECT` sur `cron.job` et `cron.job_run_details` (`\dp cron.job` dans psql, ou `GRANT SELECT ON cron.job, cron.job_run_details TO ut_tstat;` si nécessaire).
+2. **Dossier `db/cron/`** — créer les entités `clsJob` et `clsJobRunDetails` héritant de `clsEntity_ABS`, en mode lecture seule (pas d'insert/update).
+3. **UI BaseRef_Manager** — nouvelle section ou onglet affichant la liste des jobs pg_cron et leur dernière exécution (statut, durée, message d'erreur éventuel).
 
 ### #4 — Politique rétention snapshots — purge automatique 🟡
 **Scope :** Freebox uniquement
@@ -91,6 +92,9 @@
 
 ## ⏸️ Différé
 
+### #3 — Référentiel colonnes multilingue 🟢
+**Scope :** Remplacement des dicts UI rustine par un vrai référentiel multilingue
+
 ### #6 — Refonte `clsTableMetadata` → `clsResultMetadata` 🟢
 **Scope :** Impact massif sur toute la couche UI — à traiter quand la base est stabilisée
 
@@ -100,6 +104,17 @@
 ---
 
 ## ✅ Terminé
+
+### #5 — Refactoring architecture + #11 — Restructuration `__init__.py`
+**Livraisons :**
+- Nouvelle hiérarchie DB : `clsDB_ABS` → `clsStat_ABS` / `clsEntity_ABS` → `clsTstatData_STAT` → classes Q
+- `clsTstatCharge`, `clsTstatBase`, `clsStatBase` supprimés
+- `clsQ_journee` (MV4) et `clsQ_charge_sessions_ext` (MV2) créées dans `db/db_tstat_data/public/`
+- `mv_journee` enrichie : `odometer_delta_miles` (natif miles), `odometer_debut/fin` depuis snapshots, colonnes MV3 via LEFT JOIN
+- `clsQ_charge_journee` (MV3) supprimée — absorbée dans `clsQ_journee`
+- `controllers/ctrl_accueil.py` créé — `kpi_home()` et `serie_energie_par_jour()`
+- Convention `__init__.py` appliquée : `from projets.tstat_analyse import kpi_home` — structure interne opaque
+- `db/__init__.py` et `projets/__init__.py` supprimés (dossiers groupants, pas des packages)
 
 | N  | Tâche                                          | Notes                                                                        |
 |----|------------------------------------------------|------------------------------------------------------------------------------|
@@ -114,6 +129,8 @@
 | —  | Selecteur véhicule                             | `st.selectbox` + `get_liste_vehicules()` dans `cache_charge.py`              |
 | #1 | Page d'accueil v1->v2                          | KPIs journée/mois/année, capacité 7j avec delta, rendement km, graphique     |
 | #9 | `mv_journee` + graphique km                    | MV4 snapshots, détection coupure réseau collecteur, double axe Y accueil     |
+| #5 | Refactoring architecture — dette technique     | Voir détail ci-dessous                                                       |
+| #11| Restructuration `__init__.py`                  | Voir détail ci-dessous                                                       |
 
 ---
 

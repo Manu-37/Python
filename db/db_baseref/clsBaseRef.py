@@ -1,5 +1,5 @@
 # DB/BaseRef/clsBaseRef.py
-from db.clsEntity_ABS import clsEntity_ABS
+from ..clsEntity_ABS import clsEntity_ABS
 from sysclasses.clsLOG import clsLOG
 
 class clsBaseRef(clsEntity_ABS):

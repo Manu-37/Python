@@ -17,7 +17,6 @@ Pourquoi _bootstrap() ici ?
 
 import os
 import streamlit as st
-from projets.tstat_analyse.clsTstatCharge import clsTstatCharge
 
 _TTL = 300
 
@@ -44,15 +43,3 @@ def bootstrap() -> None:
         os.environ["TSTAT_PROJET_VER"],
     )
     AppBootstrap(os.environ["TSTAT_INI_FILE"], clsINITstatAnalyse, mode='streamlit')
-
-
-# =============================================================================
-# Singleton clsTstatCharge — une seule instance par session serveur
-# =============================================================================
-
-@st.cache_resource
-def get_charge() -> clsTstatCharge:
-    """
-    Retourne l'instance unique de clsTstatCharge pour la session serveur.
-    """
-    return clsTstatCharge()

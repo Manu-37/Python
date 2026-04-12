@@ -2,18 +2,22 @@
 -- MATERIALIZED VIEW : mv_journee  (MV4)
 -- Synthèse quotidienne complète — ancrée sur les snapshots, pas sur les charges.
 -- Source principale : t_snapshot_snp  GROUP BY (veh_id, jour local Europe/Paris)
--- Source secondaire : mv_charge_journee (MV3) — LEFT JOIN pour l'énergie et
---                     la capacité des jours où une charge a eu lieu.
+-- Source secondaire : mv_charge_journee (MV3) — LEFT JOIN pour enrichir les jours
+--                     où une charge a eu lieu.
 --
 -- Colonnes :
---   veh_id               — véhicule
---   date_jour            — date locale Europe/Paris (= heure locale du conducteur)
---   km_journee           — (MAX(odometer) − MIN(odometer)) × 1,60934
---                          Capte tous les km du jour, y compris les jours sans charge.
---                          0 si un seul snapshot dans la journée.
---   nb_snapshots         — nombre de snapshots du jour (proxy de présence de données)
---   energie_ajoutee_kwh  — somme des énergies rechargées dans la journée (NULL si pas de charge)
---   capacite_estimee_kwh — dernière estimation de capacité batterie du jour (NULL si pas de charge)
+--   veh_id                       — véhicule
+--   date_jour                    — date locale Europe/Paris
+--   odometer_delta_miles         — (MAX(odometer) − MIN(odometer)) en miles bruts
+--                                   Convention projet : valeurs natives Tesla, pas de conversion.
+--                                   0.000 si un seul snapshot dans la journée.
+--   nb_snapshots                 — nombre de snapshots (proxy de présence de données)
+--   energie_ajoutee_kwh          — somme des énergies rechargées (NULL si pas de charge)
+--   capacite_estimee_kwh         — dernière estimation capacité du jour (NULL si pas de charge)
+--   soc_debut_pct / soc_fin_pct  — SOC début/fin (NULL si pas de charge)
+--   odometer_debut / odometer_fin — odomètre début/fin du jour de charge (NULL si pas de charge)
+--   miles_depuis_charge_prec     — distance inter-charges (NULL si pas de charge)
+--   session_num_debut / fin      — numéros de sessions du jour (NULL si pas de charge)
 --
 -- Rattachement timezone :
 --   snp_timestamp est stocké en UTC.
@@ -43,11 +47,12 @@ WITH snp_jour AS (
     SELECT
         veh_id,
         DATE(snp_timestamp AT TIME ZONE 'Europe/Paris')             AS date_jour,
+        MIN(snp_odometer)                                           AS odometer_debut,
+        MAX(snp_odometer)                                           AS odometer_fin,
         ROUND(
-            (MAX(snp_odometer) - MIN(snp_odometer))::NUMERIC
-            * 1.60934,
-            2
-        )                                                           AS km_journee,
+            (MAX(snp_odometer) - MIN(snp_odometer))::NUMERIC,
+            3
+        )                                                           AS odometer_delta_miles,
         COUNT(*)                                                    AS nb_snapshots
     FROM public.t_snapshot_snp
     WHERE snp_odometer IS NOT NULL
@@ -60,14 +65,21 @@ WITH snp_jour AS (
 SELECT
     s.veh_id,
     s.date_jour,
-    s.km_journee,
+    s.odometer_delta_miles,
     s.nb_snapshots,
     j.energie_ajoutee_kwh,
-    j.capacite_estimee_kwh
+    j.capacite_estimee_kwh,
+    j.soc_debut_pct,
+    j.soc_fin_pct,
+    j.odometer_debut,
+    j.odometer_fin,
+    j.miles_depuis_charge_precedente,
+    j.session_num_debut,
+    j.session_num_fin
 
 FROM snp_jour s
 LEFT JOIN public.mv_charge_journee j
-    ON  j.veh_id   = s.veh_id
+    ON  j.veh_id    = s.veh_id
     AND j.date_jour = s.date_jour
 
 WITH DATA;
@@ -89,14 +101,15 @@ COMMENT ON MATERIALIZED VIEW public.mv_journee IS
     'Synthèse quotidienne complète ancrée sur les snapshots (MV4). '
     'Présente une ligne par (veh_id, jour) dès qu''il y a au moins un snapshot, '
     'même les jours sans charge. Rattachement au jour local Europe/Paris. '
+    'Enrichie des colonnes mv_charge_journee (MV3) via LEFT JOIN. '
     'Rafraîchie en fin de session de charge ET quotidiennement à 1h via pg_cron.';
 
 COMMENT ON COLUMN public.mv_journee.date_jour
     IS 'Date locale Europe/Paris — DATE(snp_timestamp AT TIME ZONE Europe/Paris).';
 
-COMMENT ON COLUMN public.mv_journee.km_journee
-    IS 'Kilométrage journalier = (MAX(odometer) − MIN(odometer)) × 1,60934. '
-       '0 si un seul snapshot dans la journée. Basé sur odomètre brut Tesla (miles).';
+COMMENT ON COLUMN public.mv_journee.odometer_delta_miles
+    IS 'Distance journalière brute = MAX(odometer) − MIN(odometer), en miles (unité native Tesla). '
+       '0.000 si un seul snapshot dans la journée. Conversion km à la charge du consommateur.';
 
 COMMENT ON COLUMN public.mv_journee.nb_snapshots
     IS 'Nombre de snapshots dans la journée — proxy de présence/fiabilité des données.';
@@ -107,6 +120,27 @@ COMMENT ON COLUMN public.mv_journee.energie_ajoutee_kwh
 COMMENT ON COLUMN public.mv_journee.capacite_estimee_kwh
     IS 'Dernière estimation de capacité batterie du jour (depuis mv_charge_journee). '
        'NULL si pas de charge.';
+
+COMMENT ON COLUMN public.mv_journee.soc_debut_pct
+    IS 'SOC début de la première session de charge du jour. NULL si pas de charge.';
+
+COMMENT ON COLUMN public.mv_journee.soc_fin_pct
+    IS 'SOC fin de la dernière session de charge du jour. NULL si pas de charge.';
+
+COMMENT ON COLUMN public.mv_journee.odometer_debut
+    IS 'Odomètre (miles) au début de la première session de charge du jour. NULL si pas de charge.';
+
+COMMENT ON COLUMN public.mv_journee.odometer_fin
+    IS 'Odomètre (miles) à la fin de la dernière session de charge du jour. NULL si pas de charge.';
+
+COMMENT ON COLUMN public.mv_journee.miles_depuis_charge_precedente
+    IS 'Distance inter-charges du jour (miles bruts). NULL si pas de charge.';
+
+COMMENT ON COLUMN public.mv_journee.session_num_debut
+    IS 'Numéro de la première session de charge du jour. NULL si pas de charge.';
+
+COMMENT ON COLUMN public.mv_journee.session_num_fin
+    IS 'Numéro de la dernière session de charge du jour. NULL si pas de charge.';
 
 
 -- =============================================================================
