@@ -1,4 +1,6 @@
+from datetime import date, timedelta
 from ..clsTstatData_STAT import clsTstatData_STAT
+from sysclasses.tools import Tools
 
 
 class clsQ_journee(clsTstatData_STAT):
@@ -48,6 +50,10 @@ class clsQ_journee(clsTstatData_STAT):
             conso_kwh_100km                — calculé ; None si km = 0 ou énergie absente
         Retourne None si aucune donnée.
         """
+        if not date_jour:
+            date_jour_date = date.today()- timedelta(days=1)  # par défaut, on prend la journée d'hier (la plus récente complète)
+            date_jour = Tools.date_en_str(date_jour_date,'D')
+
         where, params = self._build_where({
             "veh_id"   : veh_id,
             "date_jour": date_jour,
@@ -79,6 +85,7 @@ class clsQ_journee(clsTstatData_STAT):
         self,
         veh_id    : int,
         date_debut: str = None,
+        date_fin  : str = None,
     ) -> list[dict]:
         """
         Énergie ajoutée et distance par jour depuis date_debut.
@@ -93,6 +100,7 @@ class clsQ_journee(clsTstatData_STAT):
         where, params = self._build_where({
             "veh_id"        : veh_id,
             "date_jour__gte": date_debut,
+            "date_jour__lte": date_fin,
         })
 
         sql = f"""

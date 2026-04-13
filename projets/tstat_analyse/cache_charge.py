@@ -52,8 +52,10 @@ def get_energie_par_jour(veh_id: int, nb_jours: int = 30) -> list[dict]:
     Utilisé pour le mini-graphique de la home.
     """
     from datetime import date, timedelta
-    date_debut = (date.today() - timedelta(days=nb_jours)).isoformat()
-    return serie_energie_par_jour(veh_id=veh_id, date_debut=date_debut)
+    date_debut = (date.today() - timedelta(days=nb_jours+1)).isoformat()
+    date_fin   = (date.today() - timedelta(days=1)).isoformat()  # on prend la journée d'hier, la plus récente complète
+    print(date_debut, date_fin)     
+    return serie_energie_par_jour(veh_id=veh_id, date_debut=date_debut, date_fin=date_fin)
 
 
 # =============================================================================

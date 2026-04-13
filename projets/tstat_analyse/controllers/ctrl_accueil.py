@@ -79,9 +79,9 @@ def kpi_home(veh_id: int) -> dict:
 # Série temporelle — graphique énergie par jour
 # =============================================================================
 
-def serie_energie_par_jour(veh_id: int, date_debut: str) -> list[dict]:
+def serie_energie_par_jour(veh_id: int, date_debut: str, date_fin: str = None) -> list[dict]:
     """
-    Énergie ajoutée et kilométrage par jour depuis date_debut.
+    Énergie ajoutée et kilométrage par jour entre date_debut et date_fin.
 
     Retourne par jour :
         periode              — date_jour (DATE)
@@ -90,7 +90,7 @@ def serie_energie_par_jour(veh_id: int, date_debut: str) -> list[dict]:
         km_journee           — calculé : odometer_delta_miles × 1.60934 (1 décimale)
     """
     q    = clsQ_journee()
-    rows = q.energie_par_jour(veh_id, date_debut)
+    rows = q.energie_par_jour(veh_id, date_debut, date_fin)
     for row in rows:
         miles = row.get("odometer_delta_miles")
         row["km_journee"] = round(float(miles) * 1.60934, 1) if miles is not None else None
