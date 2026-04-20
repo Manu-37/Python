@@ -12,6 +12,7 @@ Sources :
 """
 
 from db.db_tstat_data import clsQ_journee, clsQ_charge_sessions_ext
+from datetime import date, timedelta
 
 
 # =============================================================================
@@ -53,7 +54,7 @@ def kpi_home(veh_id: int) -> dict:
     q_ext = clsQ_charge_sessions_ext()
 
     cap_moy, cap_delta = q.moyenne_capacite_glissante(veh_id, nb_jours=7)
-    journee            = q.journee(veh_id)
+    derniere_recharge  = q.derniere_recharge(veh_id, date.today() - timedelta(days=1))
     periode_mois       = q.donnees_periode(veh_id, "mois")
     periode_annee      = q.donnees_periode(veh_id, "annee")
     derniere_cap       = q.derniere_capacite(veh_id)
@@ -64,7 +65,7 @@ def kpi_home(veh_id: int) -> dict:
         "capacite_7j_moy"       : cap_moy,
         "capacite_7j_delta"     : cap_delta,
         "derniere_session"      : sessions[0] if sessions else None,
-        "journee_actuelle"      : journee,
+        "derniere_recharge"     : derniere_recharge,
         "km_mois"               : periode_mois["km_total"],
         "km_annee"              : periode_annee["km_total"],
         "energie_mois"          : periode_mois["energie_totale_kwh"],

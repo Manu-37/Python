@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 from ..clsTstatData_STAT import clsTstatData_STAT
 from sysclasses.tools import Tools
 
@@ -32,71 +32,86 @@ class clsQ_journee(clsTstatData_STAT):
     # Méthodes publiques
     # =========================================================================
 
-    def journee(self, veh_id: int, date_jour: str = None) -> dict | None:
+    def derniere_recharge(self, veh_id: int, date_limite: date) -> dict | None:
         """
-        Données d'un jour donné, ou du dernier jour disponible si date_jour est None.
+        Données de la dernière journée avec recharge <= date_limite.
 
         Retourne un dict enrichi :
-            date_jour                      — date de la journée
-            odometer_delta_miles           — distance brute (miles, unité native)
-            km_journee                     — calculé : odometer_delta_miles × 1.60934
-            nb_snapshots
-            energie_ajoutee_kwh            — NULL si pas de charge
-            capacite_estimee_kwh           — NULL si pas de charge
-            soc_debut_pct / soc_fin_pct    — NULL si pas de charge
-            odometer_debut / odometer_fin  — NULL si pas de charge
-            miles_depuis_charge_precedente — NULL si pas de charge
-            session_num_debut / fin        — NULL si pas de charge
-            conso_kwh_100km                — calculé ; None si km = 0 ou énergie absente
-        Retourne None si aucune donnée.
+            date_jour                        — date de la recharge
+            energie_ajoutee_kwh              — énergie ajoutée
+            capacite_estimee_kwh             — capacité estimée
+            soc_debut_pct / soc_fin_pct      — SOC début/fin de recharge
+            miles_depuis_charge_precedente   — distance brute depuis la charge précédente
+            km_depuis_charge_precedente      — calculé : miles × 1.60934
+            conso_kwh_100km                  — calculé sur km_depuis_charge_precedente
+            date_recharge_precedente         — date de la recharge précédente (DATE), None si première recharge
+        Retourne None si aucune recharge trouvée.
         """
-        if not date_jour:
-            date_jour_date = date.today()- timedelta(days=1)  # par défaut, on prend la journée d'hier (la plus récente complète)
-            date_jour = Tools.date_en_str(date_jour_date,'D')
-
-        where, params = self._build_where({
-            "veh_id"   : veh_id,
-            "date_jour": date_jour,
-        })
-
-        sql = f"""
-            SELECT *
-            FROM {self._schema}.{self._table}
-            {where}
-            ORDER BY date_jour DESC
-            LIMIT 1
+        sql = """
+            WITH derniere AS (
+                SELECT *
+                FROM public.mv_journee
+                WHERE energie_ajoutee_kwh IS NOT NULL
+                  AND veh_id = %s
+                  AND date_jour <= %s
+                ORDER BY date_jour DESC
+                LIMIT 1
+            ),
+            precedente AS (
+                SELECT date_jour
+                FROM public.mv_journee
+                WHERE energie_ajoutee_kwh IS NOT NULL
+                  AND veh_id = %s
+                  AND date_jour < (SELECT date_jour FROM derniere)
+                ORDER BY date_jour DESC
+                LIMIT 1
+            )
+            SELECT d.*, p.date_jour AS date_recharge_precedente
+            FROM derniere d
+            LEFT JOIN precedente p ON true
         """
-        rows = self.ogEngine.execute_select(sql, params if params else None)
+        rows = self.ogEngine.execute_select(sql, (veh_id, date_limite, veh_id))
         if not rows:
             return None
 
         row   = dict(rows[0])
-        miles = row.get("odometer_delta_miles")
+        miles = row.get("miles_depuis_charge_precedente")
         kwh   = row.get("energie_ajoutee_kwh")
 
         km    = round(float(miles) * 1.60934, 1) if miles is not None else None
         conso = round(float(kwh) / km * 100, 1)  if km and km > 0 and kwh else None
 
-        row["km_journee"]      = km
-        row["conso_kwh_100km"] = conso
+        row["km_depuis_charge_precedente"] = km
+        row["conso_kwh_100km"]             = conso
         return row
 
     def energie_par_jour(
         self,
         veh_id    : int,
-        date_debut: str = None,
-        date_fin  : str = None,
+        date_debut: str,
+        date_fin  : str,
+        granularite : str = "jour",
     ) -> list[dict]:
         """
-        Énergie ajoutée et distance par jour depuis date_debut.
-        Couvre tous les jours avec snapshots — les jours sans charge ont
-        energie_ajoutee_kwh = NULL.
+        Énergie ajoutée et distance par période entre date_debut et date_fin.
+        Jointure sur t_dates_dat pour le groupage calendaire.
 
-        Retourne par jour :
-            periode              — date_jour (DATE)
-            energie_totale_kwh   — énergie ajoutée (kWh), NULL si pas de recharge
-            odometer_delta_miles — distance brute (miles, unité native)
+        granularite : 'jour' (défaut) | 'semaine' | 'mois'
+
+        Retourne par période :
+            rupture              — valeur de groupage (dat_date, dat_semaine ou dat_mois)
+            periode              — première date de la période (DATE)
+            energie_totale_kwh   — somme énergie ajoutée (kWh), NULL si pas de recharge
+            odometer_delta_miles — somme distances (miles bruts, unité native Tesla)
         """
+        # Rupture de granularité : La rupture est calculée sur la base des colonnes de la table t_dates_dat
+        rupture_granularite = {
+            "jour"      : "dat_date",
+            "semaine"   : "dat_semaine",
+            "mois"      : "dat_mois",
+        }
+        colonne_rupture = rupture_granularite[granularite]
+
         where, params = self._build_where({
             "veh_id"        : veh_id,
             "date_jour__gte": date_debut,
@@ -105,12 +120,15 @@ class clsQ_journee(clsTstatData_STAT):
 
         sql = f"""
             SELECT
-                date_jour               AS periode,
-                energie_ajoutee_kwh     AS energie_totale_kwh,
-                odometer_delta_miles
-            FROM {self._schema}.{self._table}
+                {colonne_rupture}             AS rupture,
+                MIN(dat.dat_date)             AS periode,
+                SUM(energie_ajoutee_kwh)      AS energie_totale_kwh,
+                SUM(odometer_delta_miles)     AS odometer_delta_miles
+            FROM public.mv_journee j
+            INNER JOIN public.t_dates_dat dat ON j.date_jour = dat.dat_date
             {where}
-            ORDER BY date_jour ASC
+            GROUP BY {colonne_rupture}
+            ORDER BY {colonne_rupture} ASC
         """
         return self.ogEngine.execute_select(sql, params if params else None)
 
@@ -136,6 +154,58 @@ class clsQ_journee(clsTstatData_STAT):
             return float(rows[0]["capacite_estimee_kwh"])
         return None
 
+    def capacite_glissante(
+        self,
+        veh_id    : int,
+        date_debut: date,
+        date_fin  : date,
+        nb_points : int = 30,
+        ) -> list[dict]:
+        """
+        Capacité batterie estimée sur les nb_points derniers jours avec données,
+        entre date_debut et date_fin.
+        Retourne par jour :
+            date_jour            — date de la journée
+            capacite_estimee_kwh — capacité estimée ce jour-là (NULL si pas de charge)
+            moy_glissante        — moyenne glissante sur nb_points jours (NULL si fenêtre incomplète)
+        """
+        date_limite = Tools.date_en_str(Tools.add_days_to_date(date_debut, -nb_points))
+        date_fin_str = Tools.date_en_str(date_fin)
+        date_debut_str = Tools.date_en_str(date_debut)
+
+        SQL = f"""
+            WITH serie_dates AS (
+                    SELECT dat_date
+                    FROM public.t_dates_dat
+                    WHERE dat_date BETWEEN '{date_debut_str}' AND '{date_fin_str}'
+                ),
+                fenetre AS (
+                    SELECT
+                        veh_id,
+                        date_jour,
+                        capacite_estimee_kwh,
+                        AVG(capacite_estimee_kwh) OVER (
+                            PARTITION BY veh_id
+                            ORDER BY date_jour
+                            ROWS BETWEEN {nb_points-1} PRECEDING AND CURRENT ROW
+                        ) AS moy_glissante
+                    FROM public.mv_journee
+                    WHERE capacite_estimee_kwh IS NOT NULL
+                    AND veh_id = {veh_id}
+                    AND date_jour >= '{date_limite}'::date
+                    AND date_jour <= '{date_fin_str}'::date
+                )
+                SELECT
+                    sd.dat_date,
+                    f.capacite_estimee_kwh,
+                    f.moy_glissante
+                FROM serie_dates sd
+                LEFT JOIN fenetre f ON f.date_jour = sd.dat_date
+                ORDER BY sd.dat_date
+        """
+        rows = self.ogEngine.execute_select(SQL)
+        return [dict(row) for row in rows] if rows else []
+    
     def moyenne_capacite_glissante(
         self,
         veh_id  : int,

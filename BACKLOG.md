@@ -8,17 +8,15 @@
 
 ## 📊 Vision de synthèse
 
-| N   | Tâche                                      | Priorité | Statut        |
-|-----|--------------------------------------------|----------|---------------|
-| #5  | Refactoring architecture — dette technique | HAUTE    | Terminé       |
-| #11 | Restructuration `__init__.py`              | HAUTE    | Terminé       |
-| #2  | Page charge                                | Normale  | Bloque par #5 |
-| #10 | Suivi pg_cron — base + entités + UI        | Normale  | A faire       |
-| #4  | Politique rétention snapshots              | Normale  | A faire       |
-| #7  | OAuth2 via Freebox                         | Basse    | A faire       |
-| #3  | Référentiel colonnes multilingue           | Basse    | Differe       |
-| #6  | Refonte `clsTableMetadata`                 | Basse    | Differe       |
-| #8  | `t_lieu_liu` — lieux manuels               | Basse    | Differe       |
+| N   | Tâche                                      | Priorité | Statut  |
+|-----|--------------------------------------------|----------|---------|
+| #2  | Page charge                                | Normale  | A faire |
+| #10 | Suivi pg_cron — base + entités + UI        | Normale  | A faire |
+| #4  | Politique rétention snapshots              | Normale  | A faire |
+| #7  | OAuth2 via Freebox                         | Basse    | A faire |
+| #3  | Référentiel colonnes multilingue           | Basse    | Différé |
+| #6  | Refonte `clsTableMetadata`                 | Basse    | Différé |
+| #8  | `t_lieu_liu` — lieux manuels               | Basse    | Différé |
 
 ---
 

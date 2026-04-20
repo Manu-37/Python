@@ -52,7 +52,8 @@ commande = [
     sys.executable,
     "-m", "streamlit", "run",
     accueil,
-    "--server.headless", "false",
+    "--server.headless",    "false",
+    "--server.fileWatcherType", "none",
 ]
 
 try:

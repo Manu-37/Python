@@ -17,10 +17,11 @@ Toutes les données viennent de cache_charge.py.
 """
 
 import streamlit as st
-import plotly.graph_objects as go
 from cache_ressources import bootstrap
 from cache_charge import get_kpi_home, get_energie_par_jour, get_liste_vehicules
-from utilis import COULEURS, fmt_float, fmt_date, km_par_kwh, kpi_bloc_format, delta_couleur, delta_texte
+from utilis import COULEURS, fmt_float, km_par_kwh, kpi_bloc_format, delta_couleur, delta_texte
+from charts import fig_energie_km
+from widgets import ligne_kpi, entete_tableau_kpi
 
 # =============================================================================
 # Bootstrap — obligatoire avant tout appel cache
@@ -64,10 +65,10 @@ NB_JOURS = 30
 # Chargement des données
 # =============================================================================
 
-kpi      = get_kpi_home(veh_id=VEH_ID)
-serie    = get_energie_par_jour(veh_id=VEH_ID, nb_jours=NB_JOURS)
-derniere = kpi.get("derniere_session") or {}
-journee  = kpi.get("journee_actuelle") or {}
+kpi               = get_kpi_home(veh_id=VEH_ID)
+serie             = get_energie_par_jour(veh_id=VEH_ID, nb_jours=NB_JOURS)
+derniere          = kpi.get("derniere_session")  or {}
+derniere_recharge = kpi.get("derniere_recharge") or {}
 
 # =============================================================================
 # État courant — 7 colonnes
@@ -80,23 +81,23 @@ st.subheader("État courant")
 col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 
 with col1:
+    debut = derniere.get("debut_session")
     st.markdown(
         kpi_bloc_format(
-            valeur = fmt_date(derniere.get("debut_session")),
+            valeur = debut.strftime("%d/%m/%Y") if debut else "—",
             label  = "Dernière charge",
-            label2 = f"→ {fmt_date(derniere.get('fin_session'))}",
         ),
         unsafe_allow_html=True,
     )
 
 with col2:
-    date_jour  = journee.get("date_jour")
-    label_date = date_jour.strftime("%d/%m/%Y") if date_jour else "—"
+    date_prec = derniere_recharge.get("date_recharge_precedente")
+    label_prec = date_prec.strftime("%d/%m/%Y") if date_prec else "—"
     st.markdown(
         kpi_bloc_format(
-            valeur  = fmt_float(journee.get("km_journee"), decimales=0, suffixe=" km"),
+            valeur  = fmt_float(derniere_recharge.get("km_depuis_charge_precedente"), decimales=0, suffixe=" km"),
             couleur = COULEURS["km"],
-            label   = f"Km — {label_date}",
+            label   = f"Km depuis recharge — {label_prec}",
         ),
         unsafe_allow_html=True,
     )
@@ -104,7 +105,7 @@ with col2:
 with col3:
     st.markdown(
         kpi_bloc_format(
-            valeur  = fmt_float(journee.get("energie_ajoutee_kwh"), decimales=1, suffixe=" kWh"),
+            valeur  = fmt_float(derniere_recharge.get("energie_ajoutee_kwh"), decimales=1, suffixe=" kWh"),
             couleur = COULEURS["energie"],
             label   = "Énergie rechargée",
         ),
@@ -114,7 +115,7 @@ with col3:
 with col4:
     st.markdown(
         kpi_bloc_format(
-            valeur  = fmt_float(journee.get("conso_kwh_100km"), decimales=1, suffixe=" kWh/100km"),
+            valeur  = fmt_float(derniere_recharge.get("conso_kwh_100km"), decimales=1, suffixe=" kWh/100km"),
             couleur = COULEURS["conso"],
             label   = "Consommation",
         ),
@@ -122,9 +123,11 @@ with col4:
     )
 
 with col5:
+    km  = derniere_recharge.get("km_depuis_charge_precedente")
+    kwh = derniere_recharge.get("energie_ajoutee_kwh")
     st.markdown(
         kpi_bloc_format(
-            valeur  = fmt_float(km_par_kwh(journee.get("km_journee"), journee.get("energie_ajoutee_kwh")), decimales=1, suffixe=" km/kWh"),
+            valeur  = fmt_float(km_par_kwh(km, kwh), decimales=1, suffixe=" km/kWh"),
             couleur = COULEURS["rendementk"],
             label   = "Rendement kilométrique",
         ),
@@ -169,25 +172,9 @@ with col7:
 
 st.divider()
 
-_, col_km, col_nrj, col_conso, col_rendement, _, _ = st.columns(7)
-with col_km:        st.markdown("**Kilométrage**")
-with col_nrj:       st.markdown("**Énergie rechargée**")
-with col_conso:     st.markdown("**Consommation**")
-with col_rendement: st.markdown("**Rendement kilométrique**")
-
-col_label, col_km, col_nrj, col_conso, col_rendement, _, _ = st.columns(7)
-with col_label:     st.markdown("<br>**Mois courant**", unsafe_allow_html=True)
-with col_km:        st.markdown(kpi_bloc_format(fmt_float(kpi.get("km_mois"),               decimales=0, suffixe=" km"),         COULEURS["km"]),         unsafe_allow_html=True)
-with col_nrj:       st.markdown(kpi_bloc_format(fmt_float(kpi.get("energie_mois"),          decimales=1, suffixe=" kWh"),        COULEURS["energie"]),    unsafe_allow_html=True)
-with col_conso:     st.markdown(kpi_bloc_format(fmt_float(kpi.get("conso_kwh_100km_mois"),  decimales=1, suffixe=" kWh/100km"), COULEURS["conso"]),      unsafe_allow_html=True)
-with col_rendement: st.markdown(kpi_bloc_format(fmt_float(km_par_kwh(kpi.get("km_mois"),    kpi.get("energie_mois")),            decimales=1, suffixe=" km/kWh"), COULEURS["rendementk"]), unsafe_allow_html=True)
-
-col_label, col_km, col_nrj, col_conso, col_rendement, _, _ = st.columns(7)
-with col_label:     st.markdown("<br>**Année courante**", unsafe_allow_html=True)
-with col_km:        st.markdown(kpi_bloc_format(fmt_float(kpi.get("km_annee"),               decimales=0, suffixe=" km"),         COULEURS["km"]),         unsafe_allow_html=True)
-with col_nrj:       st.markdown(kpi_bloc_format(fmt_float(kpi.get("energie_annee"),          decimales=1, suffixe=" kWh"),        COULEURS["energie"]),    unsafe_allow_html=True)
-with col_conso:     st.markdown(kpi_bloc_format(fmt_float(kpi.get("conso_kwh_100km_annee"), decimales=1, suffixe=" kWh/100km"), COULEURS["conso"]),      unsafe_allow_html=True)
-with col_rendement: st.markdown(kpi_bloc_format(fmt_float(km_par_kwh(kpi.get("km_annee"),   kpi.get("energie_annee")),           decimales=1, suffixe=" km/kWh"), COULEURS["rendementk"]), unsafe_allow_html=True)
+entete_tableau_kpi()
+ligne_kpi("Mois courant",   kpi.get("km_mois"),   kpi.get("energie_mois"),   kpi.get("conso_kwh_100km_mois"))
+ligne_kpi("Année courante", kpi.get("km_annee"),  kpi.get("energie_annee"),  kpi.get("conso_kwh_100km_annee"))
 
 # =============================================================================
 # Graphique — énergie ajoutée par jour (30 derniers jours)
@@ -197,37 +184,9 @@ st.divider()
 st.subheader(f"Énergie rechargée par jour — {NB_JOURS} derniers jours")
 
 if serie:
-    periodes    = [row["periode"]                for row in serie]
-    energies    = [row.get("energie_totale_kwh") for row in serie]
-    kms         = [row.get("km_journee") for row in serie]
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x             = periodes,
-        y             = energies,
-        name          = "Énergie (kWh)",
-        marker_color  = COULEURS["energie"],
-        hovertemplate = "%{x|%d/%m/%Y}<br>%{y:.1f} kWh<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x             = periodes,
-        y             = kms,
-        yaxis         = "y2",
-        name          = "Kilométrage (km)",
-        mode          = "lines+markers",
-        marker_color  = COULEURS["km"],
-        hovertemplate = "%{x|%d/%m/%Y}<br>%{y:.0f} km<extra></extra>",
-    ))
-    fig.update_layout(
-        height        = 280,
-        margin        = dict(l=40, r=20, t=10, b=40),
-        xaxis_title   = None,
-        yaxis  = dict(title="kWh", side="left", rangemode="tozero"),
-        yaxis2 = dict(title="km",  side="right", overlaying="y", showgrid=False, rangemode="tozero" ),   
-        showlegend    = True,
-        paper_bgcolor = "rgba(0,0,0,0)",
-        plot_bgcolor  = "rgba(0,0,0,0)",
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    periodes = [row["periode"]                for row in serie]
+    energies = [row.get("energie_totale_kwh") for row in serie]
+    kms      = [row.get("km_journee")         for row in serie]
+    st.plotly_chart(fig_energie_km(periodes, energies, kms, height=280), use_container_width=True)
 else:
     st.info("Aucune donnée disponible pour le graphique.")
