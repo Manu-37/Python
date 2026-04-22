@@ -5,14 +5,27 @@
 -- Odométre début/fin de session (en miles — conversion km à l'affichage).
 -- REFRESH CONCURRENTLY via fct_refresh_mv_charge_sessions().
 --
--- Filtre sessions fantômes (deux critères cumulatifs) :
---   1. puissance_max > 0 : exclut les sessions où aucun watt n'a été échangé
+-- Filtre sessions fantômes (trois critères cumulatifs) :
+--   1. energie_ajoutee_kwh > 1.0 : exclut les sessions où l'énergie calculée
+--      (MAX - MIN de chg_energyadded) est inférieure à 1 kWh.
+--      Justification : aucun chargeur domestique ne peut constituer une vraie
+--      session en dessous de ce seuil ; les valeurs résiduelles de fluctuation
+--      BMS (trickle après Complete, gap > 4h sans déconnexion) sont toutes < 1 kWh.
+--   2. puissance_max > 0 : exclut les sessions où aucun watt n'a été échangé
 --      (câble branché, BMS actif, chargeur ne délivrant rien).
 --      Justification physique : chg_power > 0 ↔ chg_current > 0 ↔ charge réelle.
---   2. fin_session > debut_session : exclut les sessions à snapshot unique
+--   3. fin_session > debut_session : exclut les sessions à snapshot unique
 --      (durée nulle). Tesla rapporte dans ce cas une énergie résiduelle du BMS,
 --      pas une charge réelle — l'énergie affichée est celle accumulée avant
 --      le branchement, pas pendant.
+--
+-- Détection de nouvelle session (sessions_numerotees) :
+--   Un vrai début de session Tesla remet chg_energyadded à ~0 (le compteur repart
+--   de zéro). Le critère "< 1.0 AND prev > 2.0" détecte uniquement ce cas.
+--   Un critère sur la baisse relative (< prev - seuil) était trop fragile : Tesla
+--   génère des fluctuations BMS de 0.3-0.8 kWh quand le véhicule est en Complete,
+--   ce qui créait des sessions fantômes avec l'énergie résiduelle de la session
+--   précédente comme valeur MAX.
 --
 -- Début de session :
 --   debut_session, snp_id_debut, odometer_debut et soc_debut_pct sont calculés
@@ -56,7 +69,7 @@ sessions_numerotees AS (
         SUM(CASE
             WHEN prev_energyadded IS NULL
                 THEN 1
-            WHEN chg_energyadded < prev_energyadded
+            WHEN chg_energyadded < 1.0 AND prev_energyadded > 2.0
                 THEN 1
             WHEN EXTRACT(EPOCH FROM (snp_timestamp - prev_timestamp)) > 14400
                 THEN 1
@@ -77,7 +90,7 @@ sessions_agregees AS (
         MAX(snp_timestamp)                                      AS fin_session,
         MIN(CASE WHEN chg_power > 0 THEN chg_batterylevel END) AS soc_debut_pct,
         MAX(chg_batterylevel)                                   AS soc_fin_pct,
-        MAX(chg_energyadded)                                    AS energie_ajoutee_kwh,
+        MAX(chg_energyadded) - MIN(chg_energyadded)             AS energie_ajoutee_kwh,
         MAX(chg_power)                                          AS puissance_max,
         (ARRAY_AGG(chg_state ORDER BY snp_timestamp DESC))[1]  AS etat_final,
         -- Odométre début : premier snapshot avec chg_power > 0
@@ -117,7 +130,7 @@ SELECT
     odometer_fin
 
 FROM sessions_agregees
-WHERE energie_ajoutee_kwh > 0.1
+WHERE energie_ajoutee_kwh > 1.0
   AND puissance_max > 0
   -- puissance_max > 0 : exclut les sessions fantômes
   -- (câble branché, BMS actif, zéro watt échangé)
@@ -144,7 +157,7 @@ COMMENT ON MATERIALIZED VIEW public.mv_charge_sessions IS
 COMMENT ON COLUMN public.mv_charge_sessions.session_num          IS 'Numéro de session (compteur interne, repart de 1 après chaque REFRESH FULL)';
 COMMENT ON COLUMN public.mv_charge_sessions.soc_debut_pct        IS '% batterie au premier snapshot avec chg_power > 0 (début de charge réelle)';
 COMMENT ON COLUMN public.mv_charge_sessions.soc_fin_pct          IS '% batterie au dernier snapshot de la session';
-COMMENT ON COLUMN public.mv_charge_sessions.energie_ajoutee_kwh  IS 'MAX(chg_energyadded) — énergie totale ajoutée durant la session';
+COMMENT ON COLUMN public.mv_charge_sessions.energie_ajoutee_kwh  IS 'MAX - MIN(chg_energyadded) — croissance du compteur dans la session (évite les valeurs résiduelles héritées de la session précédente quand Tesla ne remet pas le compteur à zéro)';
 COMMENT ON COLUMN public.mv_charge_sessions.etat_final           IS 'Dernier chg_state connu : Complete / Stopped / Charging...';
 COMMENT ON COLUMN public.mv_charge_sessions.capacite_estimee_kwh IS 'Capacité réelle estimée en kWh — NULL si variation SOC < 5 pts ou énergie < 1 kWh';
 COMMENT ON COLUMN public.mv_charge_sessions.odometer_debut       IS 'Kilométrage au premier snapshot avec chg_power > 0 (miles bruts Tesla)';
