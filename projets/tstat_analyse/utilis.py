@@ -123,15 +123,19 @@ def couleur_pale(hex_color: str, opacite: float = 0.35) -> str:
 
     return f"#{r_pale:02x}{g_pale:02x}{b_pale:02x}"
 
-def decaler_date(d: date, duree: str) -> date:
-    from dateutil.relativedelta import relativedelta
+def debut_periode(d: date, duree: str) -> date:
+    """Premier jour de la période calendaire contenant d."""
     match duree:
-        case "Semaine"   : return d - timedelta(weeks=1)
-        case "Mois"      : return d - relativedelta(months=1)
-        case "Trimestre" : return d - relativedelta(months=3)
-        case "Semestre"  : return d - relativedelta(months=6)
-        case "Année"     : return d - relativedelta(years=1)
-        case _           : return d - relativedelta(months=1)
+        case "Semaine"  : return d - timedelta(days=d.weekday())
+        case "Mois"     : return d.replace(day=1)
+        case "Trimestre": return d.replace(month=((d.month - 1) // 3) * 3 + 1, day=1)
+        case "Semestre" : return d.replace(month=1 if d.month <= 6 else 7, day=1)
+        case "Année"    : return d.replace(month=1, day=1)
+        case _          : return d.replace(day=1)
+
+def decaler_date(d: date, duree: str) -> date:
+    """Dernier jour de la période calendaire précédant celle qui contient d."""
+    return debut_periode(d, duree) - timedelta(days=1)
 
 class Serie(IntEnum):
     EN_COURS  = 0

@@ -9,13 +9,39 @@ Toutes les données viennent de cache_charge.py.
 """
 
 import streamlit as st
-from datetime import date
+from datetime import date, timedelta
 from cache_ressources import bootstrap
-from cache_charge import get_liste_vehicules, get_capacite_glissante, get_energie_par_periode
-from utilis import decaler_date, Serie
+from cache_charge import get_liste_vehicules, get_capacite_glissante, get_energie_par_periode, get_sessions, get_courbe_session
+from utilis import decaler_date, debut_periode, Serie
 from widgets import ligne_kpi, entete_tableau_kpi
 from sysclasses import Tools
-from charts import fig_energie_km, fig_consommation, fig_capacite
+from charts import fig_energie_km, fig_consommation, fig_capacite, fig_courbe_session
+
+_MOIS_FR  = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"]
+_JOURS_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"]
+
+def _label_hover(d: date, duree: str) -> str:
+    match duree:
+        case "Semaine":
+            return f"{_JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}"
+        case "Année":
+            return f"{_MOIS_FR[d.month - 1]} {d.year}"
+        case _:
+            return d.strftime("%d/%m/%Y")
+
+def _tick_labels(duree: str, debut: date, max_rang: int):
+    """Retourne (tickvals, ticktext) pour l'axe x selon la granularité."""
+    match duree:
+        case "Semaine":
+            return list(range(1, 8)), _JOURS_FR
+        case "Trimestre" | "Semestre":
+            vals  = list(range(1, max_rang + 1))
+            texts = [(debut + timedelta(weeks=i)).strftime("%d/%m") for i in range(max_rang)]
+            return vals, texts
+        case "Année":
+            return list(range(1, 13)), _MOIS_FR
+        case _:
+            return None, None
 
 
 # =============================================================================
@@ -105,29 +131,33 @@ def afficher_recharge():
     en_cours   = energie_par_periode[Serie.EN_COURS]
     reference  = energie_par_periode[Serie.REFERENCE]
 
-    # Alignement par position
-    dates_main   = [row["periode"]                          for row in en_cours]
-    nrj_main     = [float(row["energie_totale_kwh"] or 0)  for row in en_cours]
-    km_main      = [float(row["km_periode"] or 0)          for row in en_cours]
-    conso_main   = [row["conso_kwh_100km"]                 for row in en_cours]
-    moyenne_main = en_cours[0]["moyenne_conso_kwh_100km"]  if en_cours else None
+    rangs_main   = [row["rang"]                              for row in en_cours]
+    dates_main   = [_label_hover(row["periode"], duree)      for row in en_cours]
+    nrj_main     = [float(row["energie_totale_kwh"] or 0)   for row in en_cours]
+    km_main      = [float(row["km_periode"] or 0)           for row in en_cours]
+    conso_main   = [row["conso_kwh_100km"]                  for row in en_cours]
+    moyenne_main = en_cours[0]["moyenne_conso_kwh_100km"]   if en_cours else None
 
-    nrj_ref      = [float(row["energie_totale_kwh"] or 0)  for row in reference]
-    km_ref       = [float(row["km_periode"] or 0)          for row in reference]
-    dates_ref    = [row["periode"]                          for row in reference]
-    conso_ref    = [row["conso_kwh_100km"]                 for row in reference]
-    moyenne_ref  = reference[0]["moyenne_conso_kwh_100km"] if reference else None
+    rangs_ref    = [row["rang"]                              for row in reference]
+    dates_ref    = [_label_hover(row["periode"], duree)      for row in reference]
+    nrj_ref      = [float(row["energie_totale_kwh"] or 0)   for row in reference]
+    km_ref       = [float(row["km_periode"] or 0)           for row in reference]
+    conso_ref    = [row["conso_kwh_100km"]                  for row in reference]
+    moyenne_ref  = reference[0]["moyenne_conso_kwh_100km"]  if reference else None
 
     entete_tableau_kpi()
     ligne_kpi(f"Sélection courante ({duree})", sum(km_main), sum(nrj_main), moyenne_main)
 
+    max_rang = max((rangs_ref or [0])[-1] if rangs_ref else 0, rangs_main[-1] if rangs_main else 0)
+    tickvals, ticktext = _tick_labels(duree, debut_periode(date_fin, duree), max_rang)
+
     st.plotly_chart(
-        fig_energie_km(dates_main, nrj_main, km_main, dates_ref, nrj_ref, km_ref, dates_ref),
+        fig_energie_km(rangs_main, nrj_main, km_main, dates_main, rangs_ref, nrj_ref, km_ref, dates_ref, tickvals=tickvals, ticktext=ticktext),
         use_container_width=True,
     )
 
     st.plotly_chart(
-        fig_consommation(dates_main, conso_main, moyenne_main, conso_ref, moyenne_ref),
+        fig_consommation(rangs_main, conso_main, moyenne_main, dates_main, rangs_ref, conso_ref, moyenne_ref, dates_ref, tickvals=tickvals, ticktext=ticktext),
         use_container_width=True,
     )
 
@@ -147,7 +177,61 @@ def afficher_capacite():
         st.info("Aucune donnée disponible pour le graphique.")
    
 def afficher_sessions():
-    st.header("Sessions de charge récentes")
+    import pandas as pd
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+
+    def _paris(dt):
+        return dt.astimezone(_PARIS) if dt else None
+
+    st.header("Sessions de charge")
+    duree, date_fin, _, _ = selecteurs_periode("ses", index_duree=1, avec_moyenne=False, avec_comparaison=False)
+
+    sessions = get_sessions(veh_id=VEH_ID, duree=duree, date_fin=date_fin)
+    if not sessions:
+        st.info("Aucune session de charge sur cette période.")
+        return
+
+    lignes = []
+    for s in sessions:
+        debut   = _paris(s["debut_session"])
+        fin     = _paris(s["fin_session"])
+        duree_s = int((fin - debut).total_seconds()) if debut and fin else 0
+        h, m    = divmod(duree_s // 60, 60)
+        km_prec = s.get("km_depuis_charge_precedente")
+        lignes.append({
+            "Début"           : debut.strftime("%d/%m %H:%M") if debut else "—",
+            "Durée"           : f"{h}h{m:02d}"               if duree_s else "—",
+            "kWh"             : s.get("energie_ajoutee_kwh"),
+            "SOC"             : f"{s['soc_debut_pct']}% → {s['soc_fin_pct']}%",
+            "Pmax (kW)"       : s.get("puissance_max_kw"),
+            "Type"            : "DC" if s.get("fastcharger") else "AC",
+            "État"            : s.get("etat_final", ""),
+            "km depuis préc." : round(km_prec, 0) if km_prec is not None else None,
+        })
+
+    sel = st.dataframe(
+        pd.DataFrame(lignes),
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+    )
+
+    idx_selectionnes = sel.selection.rows
+    if idx_selectionnes:
+        s      = sessions[idx_selectionnes[0]]
+        courbe = get_courbe_session(s["snp_id_debut"], s["snp_id_fin"])
+        if courbe:
+            # Conversion UTC → Paris pour l'axe temporel du graphique
+            courbe_paris = [
+                {**row, "snp_timestamp": _paris(row["snp_timestamp"])}
+                for row in courbe
+            ]
+            type_str = "Superchargeur DC" if s.get("fastcharger") else "AC"
+            debut    = _paris(s["debut_session"])
+            st.subheader(f"Courbe — {debut.strftime('%d/%m/%Y %H:%M')} · {type_str}")
+            st.plotly_chart(fig_courbe_session(courbe_paris), use_container_width=True)
 
 # =============================================================================
 # Initialisations

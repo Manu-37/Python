@@ -88,12 +88,19 @@ class clsQ_charge_sessions_ext(clsTstatData_STAT):
         "energie_ajoutee_kwh"           : {"label": "Énergie (kWh)",         "width": 110, "anchor": "e"},
         "capacite_estimee_kwh"          : {"label": "Capacité est. (kWh)",   "width": 140, "anchor": "e"},
         "etat_final"                    : {"label": "État",                  "width": 100, "anchor": "w"},
-        "odometer_debut"                : {"label": "Odomètre déb. (mi)",    "width": 130, "anchor": "e"},
-        "odometer_fin"                  : {"label": "Odomètre fin (mi)",     "width": 130, "anchor": "e"},
+        "fastcharger"                   : {"label": "Type",                  "width":  80, "anchor": "w"},
+        "puissance_max_kw"              : {"label": "Pmax (kW)",             "width":  90, "anchor": "e"},
+        "puissance_moy_kw"              : {"label": "Pmoy (kW)",             "width":  90, "anchor": "e"},
         "odometer_debut_km"             : {"label": "Odomètre déb. (km)",    "width": 130, "anchor": "e"},
         "odometer_fin_km"               : {"label": "Odomètre fin (km)",     "width": 130, "anchor": "e"},
-        "miles_depuis_charge_precedente": {"label": "Depuis préc. (mi)",     "width": 120, "anchor": "e"},
         "km_depuis_charge_precedente"   : {"label": "Depuis préc. (km)",     "width": 120, "anchor": "e"},
+    }
+
+    UI_COURBE_SESSION: dict = {
+        "snp_timestamp"   : {"label": "Horodatage",       "width": 150, "anchor": "w"},
+        "chg_power"       : {"label": "Puissance (kW)",   "width": 110, "anchor": "e"},
+        "chg_batterylevel": {"label": "SOC (%)",          "width":  80, "anchor": "e"},
+        "chg_energyadded" : {"label": "Énergie aj. (kWh)","width": 130, "anchor": "e"},
     }
 
     # =========================================================================
@@ -202,26 +209,32 @@ class clsQ_charge_sessions_ext(clsTstatData_STAT):
 
     def sessions_recentes(
         self,
-        veh_id  : int = None,
-        limite  : int = 50,
+        veh_id      : int  = None,
+        date_debut  : str  = None,
+        date_fin    : str  = None,
+        limite      : int  = 200,
     ) -> list[dict]:
         """
-        Dernières sessions brutes, sans agrégation périodique.
+        Sessions brutes sur une période, sans agrégation.
 
         Retourne les colonnes brutes de mv_charge_sessions_ext
         enrichies des colonnes km calculées par _apply_computed().
 
         Paramètres :
-            veh_id — filtre véhicule (None = tous les véhicules)
-            limite — nombre maximum de lignes retournées (défaut 50)
+            veh_id     — filtre véhicule (None = tous les véhicules)
+            date_debut — borne inférieure inclusive (None = sans limite)
+            date_fin   — borne supérieure inclusive (None = sans limite)
+            limite     — nombre maximum de lignes retournées (défaut 200)
         """
-        filtres       = self._build_filtres(veh_id)
+        filtres       = self._build_filtres(veh_id, date_debut, date_fin)
         where, params = self._build_where(filtres)
 
         sql = f"""
             SELECT
                 veh_id,
                 session_num,
+                snp_id_debut,
+                snp_id_fin,
                 debut_session,
                 fin_session,
                 soc_debut_pct,
@@ -229,6 +242,9 @@ class clsQ_charge_sessions_ext(clsTstatData_STAT):
                 energie_ajoutee_kwh,
                 capacite_estimee_kwh,
                 etat_final,
+                fastcharger,
+                puissance_max_kw,
+                puissance_moy_kw,
                 odometer_debut,
                 odometer_fin,
                 miles_depuis_charge_precedente
@@ -239,6 +255,39 @@ class clsQ_charge_sessions_ext(clsTstatData_STAT):
         """
         rows = self.ogEngine.execute_select(sql, params if params else None)
         return self._apply_computed(rows)
+
+    def courbe_session(
+        self,
+        snp_id_debut : int,
+        snp_id_fin   : int,
+    ) -> list[dict]:
+        """
+        Points de charge bruts pour une session identifiée par ses snp_id bornes.
+
+        Retourne la courbe temporelle de la session :
+            snp_timestamp    — horodatage du snapshot (UTC)
+            chg_power        — puissance de charge (kW)
+            chg_batterylevel — niveau de batterie affiché (%)
+            chg_energyadded  — énergie ajoutée depuis branchement (kWh)
+            chg_voltage      — tension (V)
+            chg_current      — intensité (A)
+        """
+        sql = """
+            SELECT
+                s.snp_timestamp,
+                c.chg_power,
+                c.chg_batterylevel,
+                c.chg_energyadded,
+                c.chg_voltage,
+                c.chg_current
+            FROM public.t_snapshot_snp s
+            JOIN public.t_charge_chg   c ON c.snp_id = s.snp_id
+            WHERE s.snp_id BETWEEN %(id_debut)s AND %(id_fin)s
+            ORDER BY s.snp_timestamp
+        """
+        return self.ogEngine.execute_select(
+            sql, {"id_debut": snp_id_debut, "id_fin": snp_id_fin}
+        )
 
     # =========================================================================
     # Méthode générique privée — moteur d'agrégation périodique

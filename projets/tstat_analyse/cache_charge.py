@@ -8,7 +8,7 @@ Rôle :
 
 import streamlit as st
 from datetime import date, timedelta
-from projets.tstat_analyse import kpi_home, serie_energie_par_jour, serie_capacite_glissante, serie_energie_par_periode
+from projets.tstat_analyse import kpi_home, serie_energie_par_jour, serie_capacite_glissante, serie_energie_par_periode, serie_sessions, courbe_session
 
 _TTL = 300
 
@@ -80,3 +80,13 @@ def get_energie_par_periode(veh_id:int, duree:str, date_fin:date, date_comparais
     Utilisé pour le mini-graphique de la home.
     """
     return serie_energie_par_periode(veh_id=veh_id, duree=duree, date_fin=date_fin, date_comparaison=date_comparaison)
+
+@st.cache_data(ttl=_TTL)
+def get_sessions(veh_id: int, duree: str, date_fin: date) -> list[dict]:
+    """Sessions brutes sur la période. Source : mv_charge_sessions_ext via ctrl_charge."""
+    return serie_sessions(veh_id=veh_id, duree=duree, date_fin=date_fin)
+
+@st.cache_data(ttl=_TTL)
+def get_courbe_session(snp_id_debut: int, snp_id_fin: int) -> list[dict]:
+    """Points de charge bruts pour une session. Source : t_snapshot_snp + t_charge_chg."""
+    return courbe_session(snp_id_debut=snp_id_debut, snp_id_fin=snp_id_fin)

@@ -48,6 +48,7 @@ WITH snapshots_charge AS (
         c.chg_batterylevel,
         c.chg_energyadded,
         c.chg_power,
+        c.chg_fastcharger,
         LAG(c.chg_energyadded) OVER w AS prev_energyadded,
         LAG(s.snp_timestamp)   OVER w AS prev_timestamp
     FROM public.t_snapshot_snp s
@@ -66,6 +67,7 @@ sessions_numerotees AS (
         chg_batterylevel,
         chg_energyadded,
         chg_power,
+        chg_fastcharger,
         SUM(CASE
             WHEN prev_energyadded IS NULL
                 THEN 1
@@ -91,8 +93,10 @@ sessions_agregees AS (
         MIN(CASE WHEN chg_power > 0 THEN chg_batterylevel END) AS soc_debut_pct,
         MAX(chg_batterylevel)                                   AS soc_fin_pct,
         MAX(chg_energyadded) - MIN(chg_energyadded)             AS energie_ajoutee_kwh,
-        MAX(chg_power)                                          AS puissance_max,
-        (ARRAY_AGG(chg_state ORDER BY snp_timestamp DESC))[1]  AS etat_final,
+        MAX(chg_power)                                                    AS puissance_max,
+        BOOL_OR(chg_fastcharger)                                          AS fastcharger,
+        AVG(chg_power) FILTER (WHERE chg_power > 0)                       AS puissance_moy,
+        (ARRAY_AGG(chg_state ORDER BY snp_timestamp DESC))[1]             AS etat_final,
         -- Odométre début : premier snapshot avec chg_power > 0
         -- Odométre fin   : dernier snapshot de la session (tous états)
         (ARRAY_AGG(snp_odometer ORDER BY
@@ -115,6 +119,9 @@ SELECT
     soc_fin_pct,
     ROUND(energie_ajoutee_kwh::NUMERIC, 2)                      AS energie_ajoutee_kwh,
     etat_final,
+    fastcharger,
+    puissance_max                                               AS puissance_max_kw,
+    ROUND(puissance_moy::NUMERIC, 1)                            AS puissance_moy_kw,
     CASE
         WHEN (soc_fin_pct - soc_debut_pct) >= 5
          AND energie_ajoutee_kwh > 1.0
@@ -162,6 +169,9 @@ COMMENT ON COLUMN public.mv_charge_sessions.etat_final           IS 'Dernier chg
 COMMENT ON COLUMN public.mv_charge_sessions.capacite_estimee_kwh IS 'Capacité réelle estimée en kWh — NULL si variation SOC < 5 pts ou énergie < 1 kWh';
 COMMENT ON COLUMN public.mv_charge_sessions.odometer_debut       IS 'Kilométrage au premier snapshot avec chg_power > 0 (miles bruts Tesla)';
 COMMENT ON COLUMN public.mv_charge_sessions.odometer_fin         IS 'Kilométrage au dernier snapshot de la session (miles bruts Tesla)';
+COMMENT ON COLUMN public.mv_charge_sessions.fastcharger          IS 'TRUE si au moins un snapshot de la session avait chg_fastcharger = TRUE (Superchargeur DC)';
+COMMENT ON COLUMN public.mv_charge_sessions.puissance_max_kw     IS 'Puissance maximale atteinte pendant la session (kW)';
+COMMENT ON COLUMN public.mv_charge_sessions.puissance_moy_kw     IS 'Puissance moyenne sur les snapshots avec chg_power > 0 (kW)';
 
 
 -- =============================================================================

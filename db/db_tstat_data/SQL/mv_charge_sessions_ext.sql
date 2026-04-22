@@ -25,6 +25,9 @@ SELECT
     cs.soc_fin_pct,
     cs.energie_ajoutee_kwh,
     cs.etat_final,
+    cs.fastcharger,
+    cs.puissance_max_kw,
+    cs.puissance_moy_kw,
     cs.capacite_estimee_kwh,
     cs.odometer_debut,
     cs.odometer_fin,
@@ -56,6 +59,12 @@ COMMENT ON MATERIALIZED VIEW public.mv_charge_sessions_ext IS
     'Sessions fantômes déjà exclues en amont par mv_charge_sessions (MAX(chg_power) > 0). '
     'Toujours rafraîchie APRÈS mv_charge_sessions via fct_refresh_all_charge_mv().';
 
+COMMENT ON COLUMN public.mv_charge_sessions_ext.fastcharger
+    IS 'TRUE si Superchargeur DC (hérité de mv_charge_sessions)';
+COMMENT ON COLUMN public.mv_charge_sessions_ext.puissance_max_kw
+    IS 'Puissance maximale atteinte pendant la session (kW)';
+COMMENT ON COLUMN public.mv_charge_sessions_ext.puissance_moy_kw
+    IS 'Puissance moyenne sur les snapshots avec chg_power > 0 (kW)';
 COMMENT ON COLUMN public.mv_charge_sessions_ext.miles_depuis_charge_precedente
     IS 'Distance parcourue depuis la fin de la session précédente (miles bruts Tesla) — NULL pour la 1ère session du véhicule. Conversion km : × 1.609344.';
 
