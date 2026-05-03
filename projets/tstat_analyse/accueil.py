@@ -187,6 +187,6 @@ if serie:
     periodes = [row["periode"]                for row in serie]
     energies = [row.get("energie_totale_kwh") for row in serie]
     kms      = [row.get("km_journee")         for row in serie]
-    st.plotly_chart(fig_energie_km(periodes, energies, kms, height=280), use_container_width=True)
+    st.plotly_chart(fig_energie_km(periodes, energies, kms, height=280), width='stretch')
 else:
     st.info("Aucune donnée disponible pour le graphique.")

@@ -25,7 +25,7 @@ class clsStChartView(clsStView):
     Paramètres :
         titre       : titre affiché au-dessus du graphique (optionnel)
         hauteur     : hauteur en pixels (défaut 400)
-        use_container_width : si True, occupe toute la largeur (défaut True)
+        width : si 'stretch', occupe toute la largeur (défaut stretch)
 
     Usage :
         class MonGraphique(clsStChartView):
@@ -44,14 +44,14 @@ class clsStChartView(clsStView):
 
     def __init__(
         self,
-        titre                : str  = "",
-        hauteur              : int  = 400,
-        use_container_width  : bool = True,
+        titre   : str  = "",
+        hauteur : int  = 400,
+        width   : str = 'stretch',
     ):
         super().__init__()
         self._titre               = titre
         self._hauteur             = hauteur
-        self._use_container_width = use_container_width
+        self._width = width
 
     # --------------------------------------------------
     # Helpers protégés — à disposition des sous-classes
@@ -73,7 +73,7 @@ class clsStChartView(clsStView):
 
     def _afficher_figure(self, fig: go.Figure) -> None:
         """Affiche la figure Plotly dans la page Streamlit."""
-        st.plotly_chart(fig, use_container_width=self._use_container_width)
+        st.plotly_chart(fig, width=self._width)
 
     def _afficher_vide(self, message: str = "Aucune donnée à afficher.") -> None:
         """

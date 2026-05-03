@@ -204,12 +204,12 @@ def afficher_recharge():
 
     st.plotly_chart(
         fig_energie_km(rangs_main, nrj_main, km_main, dates_main, rangs_ref, nrj_ref, km_ref, dates_ref, tickvals=tickvals, ticktext=ticktext),
-        use_container_width=True,
+        width='stretch',
     )
 
     st.plotly_chart(
         fig_consommation(rangs_main, conso_main, moyenne_main, dates_main, rangs_ref, conso_ref, moyenne_ref, dates_ref, tickvals=tickvals, ticktext=ticktext),
-        use_container_width=True,
+        width='stretch',
     )
 
 def afficher_capacite():
@@ -233,7 +233,7 @@ def afficher_capacite():
 
         st.plotly_chart(
             fig_capacite(periodes, energies, moyenne, tickvals=tickvals, ticktext=ticktext),
-            use_container_width=True,
+            width='stretch',
         )
     else:
         st.info("Aucune donnée disponible pour le graphique.")
@@ -274,7 +274,7 @@ def afficher_sessions():
 
     sel = st.dataframe(
         pd.DataFrame(lignes),
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -293,7 +293,7 @@ def afficher_sessions():
             type_str = "Superchargeur DC" if s.get("fastcharger") else "AC"
             debut    = _paris(s["debut_session"])
             st.subheader(f"Courbe — {debut.strftime('%d/%m/%Y %H:%M')} · {type_str}")
-            st.plotly_chart(fig_courbe_session(courbe_paris), use_container_width=True)
+            st.plotly_chart(fig_courbe_session(courbe_paris), width='stretch')
 
 # =============================================================================
 # Initialisations

@@ -81,7 +81,7 @@ class clsStTableView(clsStView):
         st.dataframe(
             df,
             height          = self._hauteur,
-            use_container_width = True,
+            width           = 'stretch',
             column_config   = st_col_config if st_col_config else None,
             hide_index      = True,
         )
