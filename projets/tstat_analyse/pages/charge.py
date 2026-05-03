@@ -20,6 +20,15 @@ from charts import fig_energie_km, fig_consommation, fig_capacite, fig_courbe_se
 _MOIS_FR  = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"]
 _JOURS_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"]
 
+_NB_POINTS_DEFAUT = {
+    "Mois"     : 14,
+    "Trimestre": 30,
+    "Semestre" : 45,
+    "Année"    : 60,
+}
+
+_DUREES_TOUTES = ["Semaine", "Mois", "Trimestre", "Semestre", "Année"]
+
 def _label_hover(d: date, duree: str) -> str:
     match duree:
         case "Semaine":
@@ -28,6 +37,39 @@ def _label_hover(d: date, duree: str) -> str:
             return f"{_MOIS_FR[d.month - 1]} {d.year}"
         case _:
             return d.strftime("%d/%m/%Y")
+
+def _tick_labels_dates(duree: str, date_debut: date, date_fin: date):
+    """Retourne (tickvals, ticktext) pour l'axe X date de l'onglet capacité."""
+    match duree:
+        case "Trimestre":
+            vals, texts = [], []
+            d = date_debut
+            while d.weekday() != 0:          # avancer jusqu'au premier lundi
+                d += timedelta(days=1)
+            while d <= date_fin:
+                vals.append(d)
+                texts.append(d.strftime("%d/%m"))
+                d += timedelta(weeks=1)
+            return vals, texts
+        case "Semestre":
+            vals, texts = [], []
+            m = date_debut.replace(day=1)
+            while m <= date_fin:
+                vals.append(m)
+                texts.append(_MOIS_FR[m.month - 1])
+                m = (m + timedelta(days=32)).replace(day=1)
+            return vals, texts
+        case "Année":
+            vals, texts = [], []
+            m = date_debut.replace(day=1)
+            while m <= date_fin:
+                vals.append(m)
+                texts.append(f"{_MOIS_FR[m.month - 1]}\n{m.year}")
+                m = (m + timedelta(days=32)).replace(day=1)
+            return vals, texts
+        case _:
+            return None, None
+
 
 def _tick_labels(duree: str, debut: date, max_rang: int):
     """Retourne (tickvals, ticktext) pour l'axe x selon la granularité."""
@@ -48,26 +90,29 @@ def _tick_labels(duree: str, debut: date, max_rang: int):
 # Procédures de chagement des données — appel des fonctions de ctrl_charge.py
 # =============================================================================
 def selecteurs_periode(
-        key_prefix: str, 
-        index_duree: int = 1, 
+        key_prefix: str,
+        index_duree: int = 1,
         avec_moyenne: bool = True,
         avec_comparaison: bool = False,
+        durees: list[str] | None = None,
         ) -> tuple:
     """
     Bloc de sélecteurs réutilisable par onglet.
     key_prefix — préfixe unique par onglet (ex: "cap", "nrj", "ses")
+    durees     — liste des durées proposées (None = toutes)
     Retourne : (duree, date_fin, nb_points, date_comparaison) — date_comparaison est None si avec_comparaison=False
     """
+    options = durees if durees is not None else _DUREES_TOUTES
     nb_cols = [5, 5]
     if avec_moyenne    : nb_cols.append(6)
     if avec_comparaison: nb_cols.append(5)
     nb_cols.append(66 - sum(nb_cols))  # spacer dynamique
     cols = st.columns(nb_cols)
-    
+
     with cols[0]:
         duree = st.selectbox(
             "Durée d'analyse",
-            options=["Semaine", "Mois", "Trimestre", "Semestre", "Année"],
+            options=options,
             index=index_duree,
             key=f"{key_prefix}_duree"
         )
@@ -80,11 +125,17 @@ def selecteurs_periode(
         )
     nb_points = None
     if avec_moyenne:
+        # Réinitialisation adaptative de nb_points si la durée change
+        cle_nb  = f"{key_prefix}_nb_points"
+        cle_pnd = f"{key_prefix}_prev_duree_nb"
+        if st.session_state.get(cle_pnd) != duree:
+            st.session_state[cle_nb] = _NB_POINTS_DEFAUT.get(duree, 30)
+        st.session_state[cle_pnd] = duree
         with cols[2]:
             nb_points = st.number_input(
                 "Moyenne glissante (jours)",
-                min_value=1, max_value=365, value=30, step=1,
-                key=f"{key_prefix}_nb_points"
+                min_value=1, max_value=365, step=1,
+                key=cle_nb,
             )
     date_comparaison = None
     if avec_comparaison:
@@ -163,16 +214,27 @@ def afficher_recharge():
 
 def afficher_capacite():
     st.header("Capacité estimée — évolution dans le temps")
-    
-    duree, date_fin, nb_points, date_comparaison = selecteurs_periode("cap", index_duree=1) 
-    serie =get_capacite_glissante(veh_id=VEH_ID, nb_points=nb_points, duree=duree, date_fin=date_fin)  # préchauffage du cache
-    if serie:
-        periodes    = [row["dat_date"]                  for row in serie]
-        energies    = [row.get("capacite_estimee_kwh")  for row in serie]
-        moyenne     = [row.get("moy_glissante")         for row in serie]
 
-        #
-        st.plotly_chart(fig_capacite(periodes, energies, moyenne), use_container_width=True)
+    duree, date_fin, nb_points, _ = selecteurs_periode(
+        "cap",
+        index_duree=0,
+        avec_moyenne=True,
+        avec_comparaison=False,
+        durees=["Mois", "Trimestre", "Semestre", "Année"],
+    )
+    serie = get_capacite_glissante(veh_id=VEH_ID, nb_points=nb_points, duree=duree, date_fin=date_fin)
+    if serie:
+        periodes = [row["dat_date"]                 for row in serie]
+        energies = [row.get("capacite_estimee_kwh") for row in serie]
+        moyenne  = [row.get("moy_glissante")        for row in serie]
+
+        date_debut = debut_periode(date_fin, duree)
+        tickvals, ticktext = _tick_labels_dates(duree, date_debut, date_fin)
+
+        st.plotly_chart(
+            fig_capacite(periodes, energies, moyenne, tickvals=tickvals, ticktext=ticktext),
+            use_container_width=True,
+        )
     else:
         st.info("Aucune donnée disponible pour le graphique.")
    

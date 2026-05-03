@@ -240,7 +240,9 @@ def fig_capacite(
     periodes : list,
     energies : list,
     moyenne  : list,
-    height   : int = 280,
+    tickvals : list = None,
+    ticktext : list = None,
+    height   : int  = 280,
 ) -> go.Figure:
     """
     Courbe de capacité batterie estimée avec moyenne glissante.
@@ -249,9 +251,9 @@ def fig_capacite(
     y_range = None
     valeurs = [float(v) for v in moyenne + energies if v is not None]
     if valeurs:
-        y_min  = min(valeurs)
-        y_max  = max(valeurs)
-        marge  = (y_max - y_min) * 0.15 or 2
+        y_min   = min(valeurs)
+        y_max   = max(valeurs)
+        marge   = (y_max - y_min) * 0.15 or 2
         y_range = [y_min - marge, y_max + marge]
 
     fig = go.Figure()
@@ -272,10 +274,16 @@ def fig_capacite(
         connectgaps   = True,
         hovertemplate = "%{x|%d/%m/%Y}<br>%{y:.0f} kWh<extra></extra>",
     ))
+
+    xaxis_cfg = dict(title=None)
+    if tickvals:
+        xaxis_cfg["tickvals"] = tickvals
+        xaxis_cfg["ticktext"] = ticktext
+
     fig.update_layout(
         height        = height,
         margin        = dict(l=40, r=20, t=10, b=40),
-        xaxis_title   = None,
+        xaxis         = xaxis_cfg,
         yaxis         = dict(title="kWh", side="left", range=y_range),
         showlegend    = True,
         legend        = dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
