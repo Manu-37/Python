@@ -6,6 +6,7 @@ from .views.Bas_Env_ListView import Bas_Env_ListView
 from .views.Vehicule_ListView import Vehicule_ListView
 from .views.Token_ListView import Token_ListView
 from .views.Crypto_View import Crypto_View
+from .views.Job_ListView import Job_ListView
 import customtkinter as ctk
 
 
@@ -38,6 +39,10 @@ class BaseRef_UICore(UI_Core):
             (MK_SEP,   None),
             # --- Groupe Utilitaires ---
             ("Chiffrement",              Crypto_View),
+            #(MK_BLANK, None)
+            (MK_SEP,   None),
+            # --- Groupe Cron ---
+            ("Tâches planifiées",        Job_ListView),
         ]
 
         self.views = {

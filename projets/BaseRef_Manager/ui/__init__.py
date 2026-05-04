@@ -9,4 +9,6 @@ from .views.Vehicule_ListView import Vehicule_ListView
 from .views.Token_FormView import Token_FormView
 from .views.Token_ListView import Token_ListView
 from .views.Crypto_View import Crypto_View
+from .views.Job_ListView import Job_ListView
+from .views.Job_run_details_ListView import Job_run_details_ListView
 from .BaseRef_UICore import BaseRef_UICore

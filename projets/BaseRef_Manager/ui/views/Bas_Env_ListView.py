@@ -15,5 +15,6 @@ class Bas_Env_ListView(Entity_ListView):
             entity_class=clsBAS_ENV_NBE ,
             order_by=clsBAS_ENV_NBE.BAS_ID,  # Tri par base d'abord, puis environnement
             form_class=Bas_Env_FormView,
-            ui_colors=ui_colors
+            ui_colors=ui_colors,
+            sash_initial_position=0.3
         )

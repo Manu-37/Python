@@ -10,7 +10,7 @@ if str(python_dir) not in sys.path:
 
 # --- Constantes projet ---
 PROJET_NOM = "BaseRef_Manager"
-PROJET_VER = "0.0.1"
+PROJET_VER = "0.3.0"
 
 # --- INITIALISATION des chemins en PREMIER ---
 # On appelle init_chemins() avant tout autre import sysclasses,

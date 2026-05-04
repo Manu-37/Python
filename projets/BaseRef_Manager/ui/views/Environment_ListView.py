@@ -15,5 +15,6 @@ class Environment_ListView(Entity_ListView):
             entity_class=clsENV,
             order_by=clsENV.ENV_CODE,
             form_class=Environment_FormView,
-            ui_colors=ui_colors
+            ui_colors=ui_colors,
+            sash_initial_position=0.3
         )

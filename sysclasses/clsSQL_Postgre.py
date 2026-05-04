@@ -19,6 +19,7 @@ _TYPE_MAPPING = {
     "character"                   : ("STRING", "CHAR"),
     "char"                        : ("STRING", "CHAR"),
     "text"                        : ("STRING", "TEXT"),
+    "name"                        : ("STRING", "NAME"),
     # --- BOOLEAN ---
     "boolean"                     : ("BOOLEAN", "BOOLEAN"),
     # --- TEMPORAL ---

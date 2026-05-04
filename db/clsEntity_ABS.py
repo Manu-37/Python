@@ -93,17 +93,21 @@ class clsEntity_ABS(clsDB_ABS):
     # --- Chargement de masse ---
 
     @classmethod
-    def load_all(cls, order_by: str = None) -> list[dict]:
+    def load_all(cls, where_clause: str = None, order_by: str = None, limit: int = 0) -> list[dict]:
         """
-        Retourne toutes les lignes de la table sous forme de liste de dict.
+        Retourne les lignes de la table sous forme de liste de dict.
         Utilisé par Entity_ListView pour alimenter la DataGrid.
         """
         from sysclasses.clsDBAManager import clsDBAManager
         engine = clsDBAManager().get_db(cls._DB_SYMBOLIC_NAME)
 
         sql = f"SELECT * FROM {cls._schema}.{cls._table}"
+        if where_clause:
+            sql += f" WHERE {where_clause}"
         if order_by:
             sql += f" ORDER BY {order_by}"
+            if limit > 0:   
+                sql += f" FETCH FIRST {limit} ROWS ONLY"
 
         return engine.execute_select(sql)
 

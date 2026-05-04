@@ -68,10 +68,12 @@ class clsDBA_SQL(clsDBA_ABS):
 
     def execute_select(self, command: str, params: tuple = None, as_dict: bool = True):
         try:
+            self._log.debug(f"Exécution SQL : {command} | params={params}")
             cursor = self._get_cursor()
             cursor.execute(command, params)
             if as_dict:
                 columns = [col[0] for col in cursor.description]
+                self._log.debug(f"Colonnes retournées : {columns}")
                 dataset = [dict(zip(columns, row)) for row in cursor.fetchall()]
                 cursor.close()
                 return dataset

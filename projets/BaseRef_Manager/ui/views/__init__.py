@@ -9,3 +9,5 @@ from .Vehicule_FormView import Vehicule_FormView
 from .Token_ListView import Token_ListView
 from .Token_FormView import Token_FormView
 from .Crypto_View import Crypto_View
+from .Job_ListView import Job_ListView
+from .Job_run_details_ListView import Job_run_details_ListView

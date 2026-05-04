@@ -22,18 +22,25 @@ class Entity_ListView(ctk.CTkFrame):
         self,
         parent,
         entity_class,
+        where_clause: str = None,
         order_by: str = None,
+        nb_lignes_max: int = 0,
         form_class=None,
-        ui_colors=None
+        ui_colors=None,
+        show_crud_buttons=True,
+        sash_initial_position: float = 0.4
     ):
         super().__init__(parent)
 
-        self.entity_class  = entity_class
-        self.order_by      = order_by
-        self.form_class    = form_class or AutoFormView
-        self.UIColors      = ui_colors
-        self.selected_row  = None
-
+        self.entity_class       = entity_class
+        self.where_clause       = where_clause
+        self.order_by           = order_by
+        self.nb_lignes_max      = nb_lignes_max
+        self.form_class         = form_class or AutoFormView
+        self.UIColors           = ui_colors
+        self._show_crud_buttons = show_crud_buttons
+        self._sash_initial_position = sash_initial_position
+        self.selected_row       = None
         self._build_layout()
         self._build_toolbar()
         self._build_grid()
@@ -71,23 +78,24 @@ class Entity_ListView(ctk.CTkFrame):
     def _set_initial_sash(self):
         hauteur_totale = self.paned.winfo_height()
         if hauteur_totale > 1:
-            self.paned.sash_place(0, 0, int(hauteur_totale * 0.40))
+            self.paned.sash_place(0, 0, int(hauteur_totale * self._sash_initial_position))
 
     # --------------------------
     # Toolbar CRUD
     # --------------------------
     def _build_toolbar(self):
         self.toolbar = ctk.CTkFrame(self)
-        self.toolbar.grid(row=0, column=0, sticky="w", padx=10, pady=10)
-
-        ctk.CTkButton(self.toolbar, text="Ajouter",   command=self._ajouter).pack(side="left", padx=5)
-        ctk.CTkButton(self.toolbar, text="Modifier",  command=self._modifier).pack(side="left", padx=5)
-        ctk.CTkButton(self.toolbar, text="Supprimer", command=self._supprimer).pack(side="left", padx=5)
-        ctk.CTkButton(self.toolbar, text="Consulter", command=self._consulter).pack(side="left", padx=5)
+        if self._show_crud_buttons:
+            ctk.CTkButton(self.toolbar, text="Ajouter",   command=self._ajouter).pack(side="left", padx=5)
+            ctk.CTkButton(self.toolbar, text="Modifier",  command=self._modifier).pack(side="left", padx=5)
+            ctk.CTkButton(self.toolbar, text="Supprimer", command=self._supprimer).pack(side="left", padx=5)
+            ctk.CTkButton(self.toolbar, text="Consulter", command=self._consulter).pack(side="left", padx=5)
 
         # Hook — point d'extension pour boutons spécifiques
         self._extend_toolbar()
-
+        # Ne grider la toolbar que si elle contient au moins un widget
+        if self.toolbar.winfo_children():
+            self.toolbar.grid(row=0, column=0, sticky="w", padx=10, pady=10)
     def _extend_toolbar(self):
         """
         Hook pour ajouter des boutons personnalisés à la suite des boutons standards.
@@ -131,7 +139,7 @@ class Entity_ListView(ctk.CTkFrame):
     # Chargement des données
     # --------------------------
     def _load_data(self):
-        data = self.entity_class.load_all(order_by=self.order_by)
+        data = self.entity_class.load_all(where_clause=self.where_clause, order_by=self.order_by, limit=self.nb_lignes_max)
         self.data_grid.set_data(data)
         self.selected_row = None
 

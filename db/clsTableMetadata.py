@@ -113,12 +113,21 @@ class clsTableMetadata:
         family = ctype[0] if isinstance(ctype, tuple) else "OTHER"
 
         if family == "NUMERIC":
+            subtype = ctype[1] if isinstance(ctype, tuple) else ""
+            if subtype == "SMALLINT":
+                return 70          # 5 chiffres max
+            if subtype in ("INTEGER", "SERIAL"):
+                return 100         # 10 chiffres max
+            if subtype in ("BIGINT", "BIGSERIAL"):
+                return 140         # 19 chiffres max
+            # DECIMAL / NUMERIC → precision est bien en chiffres décimaux
             precision = col["precision"] or 10
             width = precision * 9 + 20
             return max(60, min(width, 160))
 
+
         if family == "STRING":
-            max_length = col["max_length"] or 20
+            max_length = col["max_length"] or 30
             width = max_length * 8
             return max(80, min(width, 600))
 

@@ -15,5 +15,6 @@ class Base_ListView(Entity_ListView):
             entity_class=clsBAS,
             order_by=clsBAS.BAS_NOM,
             form_class=Base_FormView,
-            ui_colors=ui_colors
+            ui_colors=ui_colors,
+            sash_initial_position=0.3
         )
