@@ -10,7 +10,8 @@
 
 | N   | Tâche                                      | Priorité | Statut   |
 |-----|--------------------------------------------|----------|----------|
-| #10 | Suivi pg_cron — base + entités + UI        | Normale  | À faire  |
+| #13 | Diagnostic échec jobs pg_cron              | BUG 🔴  | À faire  |
+| #10 | Suivi pg_cron — base + entités + UI        | Normale  | Terminé  |
 | #4  | Politique rétention snapshots              | Normale  | À faire  |
 | #7  | OAuth2 via Freebox                         | Basse    | À faire  |
 | #2  | Page charge                                | Normale  | Terminé  |
@@ -70,15 +71,20 @@
 
 ## 📋 À faire
 
-### #10 — Suivi pg_cron — base + entités + UI 🟡
-**Scope :** BaseRef_Manager — nouvelle section de monitoring des rafraîchissements des MV
+### #13 — Diagnostic échec jobs pg_cron 🔴
+**Scope :** Base `postgres` — schéma `cron`
 
-**Contexte :** pg_cron stocke l'historique d'exécution des jobs dans sa propre base `postgre`, schéma `cron`. L'objectif est d'exposer ces données dans le BaseRef_Manager pour surveiller les refreshes programmés des vues matérialisées.
+**Symptôme :** Tous les jobs pg_cron échouent systématiquement à chaque exécution (visible dans `cron.job_run_details`, colonne `return_message`).
 
-**Travaux identifiés :**
-1. **Connexion PostgreSQL** — déclarer la base `postgre` (schéma `cron`) dans le gestionnaire de bases (`clsDBAManager`) avec le compte `ut_tstat`. Vérifier préalablement que `ut_tstat` a bien les droits `SELECT` sur `cron.job` et `cron.job_run_details`.
-2. **Dossier `db/cron/`** — créer les entités `clsJob` et `clsJobRunDetails` héritant de `clsEntity_ABS`, en mode lecture seule (pas d'insert/update).
-3. **UI BaseRef_Manager** — nouvelle section ou onglet affichant la liste des jobs pg_cron et leur dernière exécution (statut, durée, message d'erreur éventuel).
+**Hypothèse principale :** Problème de droits — l'utilisateur d'exécution des jobs (à identifier dans `cron.job.username`) n'a pas les privilèges nécessaires sur `db_tstat_data` pour exécuter les fonctions de rafraîchissement des MV.
+
+**Investigation à mener :**
+1. Lire `return_message` des dernières exécutions échouées pour identifier le message d'erreur exact
+2. Vérifier l'utilisateur d'exécution (`username` dans `cron.job`)
+3. Vérifier les droits de cet utilisateur sur les objets ciblés (`REFRESH MATERIALIZED VIEW`, fonctions, schéma)
+4. Corriger les droits manquants
+
+---
 
 ### #4 — Politique rétention snapshots — purge automatique 🟡
 **Scope :** Freebox uniquement
@@ -102,6 +108,33 @@
 ---
 
 ## ✅ Terminé
+
+### #10 — Suivi pg_cron — base + entités + UI
+**Clôturé le 04/05/2026**
+
+**Livraisons :**
+
+*Infrastructure DB :*
+- `GRANT USAGE ON SCHEMA cron TO ut_tstat` + policies RLS sur `cron.job` et `cron.job_run_details` (visibilité multi-owner)
+- Base `postgres` enregistrée dans le catalogue BaseRef_Manager (nom symbolique `POSTGRES`)
+
+*Nouvelles entités (`db/postgres/`) :*
+- `clsPostgres` — ancre pour la base `postgres` (`_DB_SYMBOLIC_NAME = "POSTGRES"`)
+- `clsJob` — entité lecture seule sur `cron.job` (pas de setters, `ctrl_valeurs` bloquant)
+- `clsJob_run_details` — entité lecture seule sur `cron.job_run_details` ; `start_time` et `end_time` convertis en timezone locale via `astimezone()` dans les getters
+
+*Nouvelle UI (BaseRef_Manager) :*
+- Bouton **Tâches planifiées** dans la sidebar
+- `Job_ListView` — liste des jobs pg_cron (lecture seule, sans boutons CRUD)
+- `Job_run_details_ListView` — 100 dernières exécutions du job sélectionné, triées `start_time DESC`, filtrées par `jobid` via `where_clause`
+
+*Améliorations framework déclenchées par cette tâche :*
+- `clsEntity_ABS.load_all()` — nouveaux paramètres `where_clause` et `limit` (`FETCH FIRST n ROWS ONLY`, actif uniquement si `order_by` présent)
+- `Entity_ListView` — nouveaux paramètres `show_crud_buttons`, `nb_lignes_max`, `where_clause`, `sash_ratio` ; toolbar non rendue si vide
+- `clsTableMetadata.get_col_width()` — correction calcul largeur pour entiers binaires PostgreSQL (precision en bits) : `SMALLINT`→70px, `INTEGER`→100px, `BIGINT`→140px
+- `clsSQL_Postgre._TYPE_MAPPING` — ajout du type système PostgreSQL `name`
+
+---
 
 ### #12 — Sauvegarde `db_tstat_data` — correction droits séquences
 **Clôturé le 03/05/2026**
@@ -152,6 +185,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO r_backup;
 | #5 | Refactoring architecture — dette technique     | Voir détail ci-dessus                                                        |
 | #11| Restructuration `__init__.py`                  | Voir détail ci-dessus                                                        |
 | #2 | Page charge — 3 onglets                        | Voir détail ci-dessus                                                        |
+| #10 | Suivi pg_cron                                  | Base postgres + entités RO + UI double datagrid + améliorations FWK          |
 | #12 | Sauvegarde `db_tstat_data`                    | Droits SELECT séquences manquants sur `r_backup` — corrigé 03/05/2026        |
 
 ---
