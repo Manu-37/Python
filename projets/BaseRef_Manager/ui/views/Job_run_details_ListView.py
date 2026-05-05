@@ -10,7 +10,7 @@ class Job_run_details_ListView(Entity_ListView):
 
     def __init__(self, parent, jobid: int, ui_colors=None):
         self._jobid = jobid
-        self._orderby = clsJob_run_details.START_TIME+' DESC'  # Tri par date de lancement décroissante
+        self._orderby = clsJob_run_details.RUNID+' DESC'  # Tri par date de lancement décroissante
         super().__init__(
             parent,
             entity_class=clsJob_run_details ,

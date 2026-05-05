@@ -96,6 +96,7 @@ class Entity_ListView(ctk.CTkFrame):
         # Ne grider la toolbar que si elle contient au moins un widget
         if self.toolbar.winfo_children():
             self.toolbar.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+            
     def _extend_toolbar(self):
         """
         Hook pour ajouter des boutons personnalisés à la suite des boutons standards.

@@ -10,14 +10,13 @@
 
 | N   | Tâche                                      | Priorité | Statut   |
 |-----|--------------------------------------------|----------|----------|
-| #13 | Diagnostic échec jobs pg_cron              | BUG 🔴  | À faire  |
-| #10 | Suivi pg_cron — base + entités + UI        | Normale  | Terminé  |
-| #4  | Politique rétention snapshots              | Normale  | À faire  |
-| #7  | OAuth2 via Freebox                         | Basse    | À faire  |
-| #2  | Page charge                                | Normale  | Terminé  |
-| #3  | Référentiel colonnes multilingue           | Basse    | Différé  |
+| #14 | Copie de fiche dans Entity_ListView        | Normale  | À faire  |
+| #3  | Référentiel colonnes multilingue           | Basse    | À faire  |
 | #6  | Refonte `clsTableMetadata`                 | Basse    | Différé  |
+| #7  | OAuth2 via Freebox                         | Basse    | Différé  |
 | #8  | `t_lieu_liu` — lieux manuels               | Basse    | Différé  |
+| #15 | Gestion des colonnes protégées             | Basse    | Différé  |
+| #4  | Politique rétention snapshots OneDrive     | Normale  | Terminé  |
 
 ---
 
@@ -71,43 +70,72 @@
 
 ## 📋 À faire
 
-### #13 — Diagnostic échec jobs pg_cron 🔴
-**Scope :** Base `postgres` — schéma `cron`
 
-**Symptôme :** Tous les jobs pg_cron échouent systématiquement à chaque exécution (visible dans `cron.job_run_details`, colonne `return_message`).
+### #14 — Copie de fiche dans Entity_ListView 🟡
+**Scope :** Ajout d'un bouton "Copier" optionnel dans la toolbar (`show_copy_button: bool = False`). Ouvre le formulaire en mode INSERT pré-rempli avec les valeurs de la ligne sélectionnée. PKs identity remises à `None` automatiquement ; PKs manuelles, colonnes chiffrées et FKs conservées telles quelles.
 
-**Hypothèse principale :** Problème de droits — l'utilisateur d'exécution des jobs (à identifier dans `cron.job.username`) n'a pas les privilèges nécessaires sur `db_tstat_data` pour exécuter les fonctions de rafraîchissement des MV.
-
-**Investigation à mener :**
-1. Lire `return_message` des dernières exécutions échouées pour identifier le message d'erreur exact
-2. Vérifier l'utilisateur d'exécution (`username` dans `cron.job`)
-3. Vérifier les droits de cet utilisateur sur les objets ciblés (`REFRESH MATERIALIZED VIEW`, fonctions, schéma)
-4. Corriger les droits manquants
-
----
-
-### #4 — Politique rétention snapshots — purge automatique 🟡
-**Scope :** Freebox uniquement
-
-### #7 — Automatisation callback OAuth2 via Freebox 🟢
-**Scope :** `clsTeslaAuth` + infra Freebox
+### #3 — Référentiel colonnes multilingue 🟢
+**Scope :** Remplacement des dicts UI rustine par un vrai référentiel multilingue — voir résumé de session pour les décisions architecturales à trancher
 
 ---
 
 ## ⏸️ Différé
 
-### #3 — Référentiel colonnes multilingue 🟢
-**Scope :** Remplacement des dicts UI rustine par un vrai référentiel multilingue
-
 ### #6 — Refonte `clsTableMetadata` → `clsResultMetadata` 🟢
 **Scope :** Impact massif sur toute la couche UI — à traiter quand la base est stabilisée
+
+### #7 — Automatisation callback OAuth2 via Freebox 🟢
+**Scope :** `clsTeslaAuth` + infra Freebox — différé sine die
 
 ### #8 — `t_lieu_liu` — lieux déclarés manuellement 🟢
 **Scope :** SQL + entité — différé sine die
 
+### #15 — Gestion des colonnes protégées (chiffrées) 🟢
+**Scope :** Réflexion sur le concept de colonnes à accès restreint. Aujourd'hui les colonnes `BINARY` (Fernet) sont simplement masquées de l'affichage. À terme : définir une politique de visibilité, de droits et d'édition dans les composants UI — le concept n'est pas encore formalisé.
+
 ---
 
 ## ✅ Terminé
+
+### #4 — Politique de rétention des sauvegardes OneDrive
+**Clôturé le 05/05/2026**
+
+**Contexte :** Les dumps PostgreSQL horaires du serveur Linux (via `backup_postgresql.sh` + rclone) s'accumulent indéfiniment dans `D:\Emmanuel\OneDrive\zLinuxBackup\postgresql\`. La purge locale Linux (48h) existait déjà. Aucune purge côté OneDrive/Windows.
+
+**Solution implémentée :** Remplacement de la logique plate de `BackupCleaner.py` (simple seuil `retention_jours`) par un algorithme GFS complet :
+
+| Fenêtre | Politique |
+|---|---|
+| < 7 jours | Tout conserver |
+| 7–30 jours | Dernier dump de chaque journée |
+| 31–365 jours | Dernier dump du dimanche de chaque semaine ISO + dernier dump du dernier jour de chaque mois |
+| > 365 jours | Dernier dump du 31 décembre de chaque année |
+
+**Fallback :** si le jour pivot préféré est absent (dimanche, fin de mois, 31/12), on conserve le dernier jour disponible de la période.
+
+**Propriétés de l'algorithme :** date parsée depuis le nom de fichier (pas le `mtime`) → idempotent, gère nativement les purges "en retard" (PC éteint pendant les vacances).
+
+**Fichiers modifiés :**
+- `projets/BackupCleaner/BackupCleaner.py` — refonte complète de la purge, v0.1.0
+- `projets/BackupCleaner/clsINIBackupCleaner.py` — suppression de `retention_jours`
+- `projets/BackupCleaner/Config/BackupCleaner.ini` — suppression de `retention_jours`
+
+---
+
+### #13 — Diagnostic échec jobs pg_cron
+**Clôturé le 05/05/2026**
+
+**Cause racine :** pg_cron se connecte à `db_tstat_data` via TCP `localhost`, qui résout en `::1` (IPv6) en priorité sur Debian. `pg_hba.conf` n'avait aucune règle `trust` pour cette combinaison — la règle `scram-sha-256` s'appliquait, et pg_cron échouait faute de mot de passe. Le rôle `postgres` (seul à passer la règle `peer`) avait été désactivé (`NOLOGIN`) pour des raisons de sécurité.
+
+**Correction appliquée dans `/etc/postgresql/15/main/pg_hba.conf` :**
+```
+local   db_tstat_data   ut_tstat_admin                trust
+host    db_tstat_data   ut_tstat_admin   127.0.0.1/32  trust
+host    db_tstat_data   ut_tstat_admin   ::1/128       trust
+```
+Règles ajoutées avant les catch-all `peer` / `scram-sha-256` existantes. Rechargement via `SELECT pg_reload_conf()`. Validé : `status = 'succeeded'`, `return_message = '1 row'`.
+
+---
 
 ### #10 — Suivi pg_cron — base + entités + UI
 **Clôturé le 04/05/2026**
@@ -187,6 +215,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO r_backup;
 | #2 | Page charge — 3 onglets                        | Voir détail ci-dessus                                                        |
 | #10 | Suivi pg_cron                                  | Base postgres + entités RO + UI double datagrid + améliorations FWK          |
 | #12 | Sauvegarde `db_tstat_data`                    | Droits SELECT séquences manquants sur `r_backup` — corrigé 03/05/2026        |
+| #13 | Diagnostic échec jobs pg_cron                 | pg_cron → TCP IPv6 (::1) sans règle trust — 3 règles pg_hba.conf ajoutées — corrigé 05/05/2026 |
 
 ---
 
