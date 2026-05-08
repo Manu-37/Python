@@ -8,15 +8,24 @@
 
 ## 📊 Vision de synthèse
 
-| N   | Tâche                                      | Priorité | Statut   |
-|-----|--------------------------------------------|----------|----------|
-| #14 | Copie de fiche dans Entity_ListView        | Normale  | À faire  |
-| #3  | Référentiel colonnes multilingue           | Basse    | À faire  |
-| #6  | Refonte `clsTableMetadata`                 | Basse    | Différé  |
-| #7  | OAuth2 via Freebox                         | Basse    | Différé  |
-| #8  | `t_lieu_liu` — lieux manuels               | Basse    | Différé  |
-| #15 | Gestion des colonnes protégées             | Basse    | Différé  |
-| #4  | Politique rétention snapshots OneDrive     | Normale  | Terminé  |
+| N   | Tâche                                            | Priorité | Statut      |
+|-----|--------------------------------------------------|----------|-------------|
+| #3+#6 | Système i18n IHM — CDC établi               | Haute    | En cours    |
+| #16 | Exécution `create_ihm_schema.sql`                | Haute    | À faire     |
+| #17 | Entités Python schéma `ihm` (14 classes)         | Haute    | À faire     |
+| #18 | BaseRef_Manager — UIs gestion référentiel `ihm`  | Haute    | À faire     |
+| #19 | Outil d'introspection DB → alimentation `ihm`    | Haute    | À faire     |
+| #20 | UI saisie traductions + matrice couverture       | Haute    | À faire     |
+| #21 | Générateur JSON chiffré (artefact runtime)       | Haute    | À faire     |
+| #22 | `clsI18n` — singleton runtime + bootstrap        | Haute    | À faire     |
+| #23 | Intégration `clsI18n` → DataGrid, clsStTableView | Normale  | À faire     |
+| #24 | Refonte `clsTableMetadata` → `clsResultMetadata` | Normale  | À faire     |
+| #25 | Audit `cree_le`/`modifie_le` toutes les bases    | Basse    | À faire     |
+| #14 | Copie de fiche dans Entity_ListView              | Normale  | À faire     |
+| #7  | OAuth2 via Freebox                               | Basse    | Différé     |
+| #8  | `t_lieu_liu` — lieux manuels                     | Basse    | Différé     |
+| #15 | Gestion des colonnes protégées                   | Basse    | Différé     |
+| #4  | Politique rétention snapshots OneDrive           | Normale  | Terminé     |
 
 ---
 
@@ -30,6 +39,9 @@
 | Formatage | `fmt_date()` et `fmt_float()` dans `Tools` — réexportés depuis `utilis.py` |
 | Nommage fonctions | Convention objet_action : `kpi_bloc_format`, `km_par_kwh`... |
 | Streamlit width | `use_container_width` déprécié — utiliser `width="stretch"` |
+| Scripts SQL | Chaque base dans `db/` a un sous-dossier `sql/` — tout script DDL est accompagné de son script de rollback (`drop_*.sql`) |
+| Colonnes d'audit | Toutes les tables sans exception : `{triplet}_cree_le` et `{triplet}_modifie_le` TIMESTAMPTZ + trigger `fn_audit_{triplet}()` BEFORE INSERT OR UPDATE |
+| Droits PostgreSQL | Grants toujours sur les rôles (`r_crud`, `r_backup`), jamais sur les utilisateurs — `ALTER DEFAULT PRIVILEGES` obligatoire pour les futurs objets |
 
 ### Couche applicative
 | Rôle | Fichier |
@@ -64,25 +76,108 @@
 
 ## 🔄 En cours
 
-*(aucune tâche en cours)*
+### #3+#6 — Système i18n IHM 🔴
+**Fusion des tâches #3 (référentiel multilingue) et #6 (refonte clsTableMetadata)**
+
+**CDC établi le 06/05/2026 — architecture validée :**
+
+Remplacement de tous les labels UI éparpillés (dicts `UI_*`, commentaires PostgreSQL, fallbacks hardcodés) par un référentiel centralisé multilingue. Stockage en base (`db_baseref`, schéma `ihm`), distribution sous forme de JSON chiffré par applicatif (via `clsCrypto`), résolution au runtime par un singleton `clsI18n`.
+
+**Architecture :**
+```
+DB ihm (authoring)  →  [génération manuelle]  →  JSON chiffré par app+langue
+                                                         ↓
+                                                   clsI18n (singleton)
+                                                         ↓
+                                              UI (CTK, Streamlit, futur)
+```
+
+**Schéma `ihm` — 14 tables validées :**
+
+| Table | Triplet | Rôle |
+|---|---|---|
+| `t_langue_lan` | `lan` | Langues supportées |
+| `t_application_app` | `app` | Applications + entrée `GLOBAL` |
+| `t_app_lan_nal` | `nal` | Liaison App ↔ Langue + langue défaut |
+| `t_type_element_tel` | `tel` | Types d'éléments UI |
+| `t_element_ele` | `ele` | Éléments UI nommés |
+| `t_libelle_element_lel` | `lel` | Traductions des éléments UI |
+| `t_db_db` | `db` | Bases logiques (racine hiérarchie DB) |
+| `t_schema_sch` | `sch` | Schémas PostgreSQL |
+| `t_type_relation_tre` | `tre` | Types de relation (TABLE/VIEW/MVIEW) |
+| `t_relation_rel` | `rel` | Tables / Vues / Vues matérialisées |
+| `t_libelle_relation_lre` | `lre` | Traductions des relations |
+| `t_type_affichage_taf` | `taf` | Types d'affichage colonnes |
+| `t_colonne_col` | `col` | Colonnes de relation |
+| `t_libelle_colonne_lco` | `lco` | Traductions des colonnes |
+
+**Scripts SQL :** `db/db_baseref/sql/create_ihm_schema.sql` + `drop_ihm_schema.sql`
+
+**Périmètre V1 :** colonnes DB, libellés relations, éléments UI (boutons/onglets/titres/sections) — fr actif, en structuré — BaseRef_Manager prioritaire, tstat_analyse ensuite
+
+**Hors périmètre V1 :** messages d'erreur, logs, libellés schémas, bascule langue à chaud, versioning historique
+
+**Sous-tâches ordonnées :** #16 → #17 → #18+#19 → #20 → #21 → #22 → #23 → #24
 
 ---
 
 ## 📋 À faire
 
+### #16 — Exécution `create_ihm_schema.sql` 🔴
+**Scope :** Exécuter le script sur `db_baseref`, vérifier le trigger `fn_audit_ihm()` sur un INSERT test, confirmer les droits `r_crud` et `r_backup`.
+**Responsable :** Emmanuel
+
+### #17 — Entités Python schéma `ihm` 🔴
+**Scope :** 14 classes dans `db/db_baseref/ihm/` suivant le pattern existant (`clsEntity_ABS`, triplets, getters/setters, `ctrl_valeurs`). Inclut `clsIHM` comme ancre de base (`_DB_SYMBOLIC_NAME = "BASEREF"`).
+**Responsable :** Claude
+**Dépend de :** #16
+
+### #18 — BaseRef_Manager — UIs gestion référentiel `ihm` 🔴
+**Scope :** Interfaces CRUD pour les tables de référence du schéma `ihm` (langues, applications, types, éléments). Discussion préalable sur la présentation générale et la navigation dans une interface qui s'enrichit.
+**Responsable :** Claude (avec discussion UI préalable)
+**Dépend de :** #17
+
+### #19 — Outil d'introspection DB → alimentation `ihm` 🔴
+**Scope :** Lit `pg_catalog` (schemas, tables, vues, colonnes) et alimente automatiquement `t_db_db`, `t_schema_sch`, `t_relation_rel`, `t_colonne_col`. **CDC détaillé obligatoire avant démarrage** — périmètre des bases couvertes, gestion des suppressions/renommages, déclenchement.
+**Responsable :** Emmanuel (avec aide Claude)
+**Dépend de :** #17
+
+### #20 — UI saisie traductions + matrice de couverture 🔴
+**Scope :** Interface de saisie des libellés par élément et par langue. Matrice de couverture ("X clés manquent en japonais"). Baptême du feu du nouveau framework UI.
+**Responsable :** Emmanuel
+**Dépend de :** #18, #19
+
+### #21 — Générateur JSON chiffré 🔴
+**Scope :** Extraction DB → JSON structuré par app+langue → chiffrement Fernet (`clsCrypto`). **CDC détaillé obligatoire** — format JSON, nommage des fichiers, localisation, déclenchement.
+**Responsable :** Emmanuel (avec aide Claude)
+**Dépend de :** #20
+
+### #22 — `clsI18n` — singleton runtime + bootstrap 🟡
+**Scope :** Singleton dans `sysclasses/`. Déchiffrement + chargement JSON au démarrage. `label(cle, locale=None)`, `tooltip(cle, locale=None)`. Fallback chain : app → GLOBAL → clé brute. **CDC détaillé obligatoire.**
+**Responsable :** à définir
+**Dépend de :** #21
+
+### #23 — Intégration `clsI18n` dans les composants existants 🟡
+**Scope :** `clsTableMetadata.get_col_label()` → délègue à `clsI18n`. Correction bug DataGrid (headers affichent `col_name` brut). `clsStTableView` → remplace dicts `UI_*`. Suppression des 5 dicts `UI_*` de `clsQ_charge_sessions_ext`. **CDC détaillé obligatoire.**
+**Responsable :** à définir
+**Dépend de :** #22
+
+### #24 — Refonte `clsTableMetadata` → `clsResultMetadata` 🟡
+**Scope :** Renommage et refonte pour couvrir les résultats de requêtes arbitraires (pas seulement les entités). `clsI18n` doit être stable avant de démarrer. **CDC détaillé obligatoire.**
+**Responsable :** à définir
+**Dépend de :** #23
+
+### #25 — Colonnes d'audit toutes les bases existantes 🟢
+**Scope :** Ajouter `{triplet}_cree_le` / `{triplet}_modifie_le` + trigger `fn_audit_{triplet}()` sur toutes les tables existantes de `db_baseref` (schéma `public`), `db_tstat_data`, `db_tstat_admin`, `db_postgres`. SQL pur, indépendant du reste. Inclut création des dossiers `sql/` manquants.
+**Responsable :** Claude (SQL) + Emmanuel (exécution)
+**Dépend de :** rien
 
 ### #14 — Copie de fiche dans Entity_ListView 🟡
 **Scope :** Ajout d'un bouton "Copier" optionnel dans la toolbar (`show_copy_button: bool = False`). Ouvre le formulaire en mode INSERT pré-rempli avec les valeurs de la ligne sélectionnée. PKs identity remises à `None` automatiquement ; PKs manuelles, colonnes chiffrées et FKs conservées telles quelles.
 
-### #3 — Référentiel colonnes multilingue 🟢
-**Scope :** Remplacement des dicts UI rustine par un vrai référentiel multilingue — voir résumé de session pour les décisions architecturales à trancher
-
 ---
 
 ## ⏸️ Différé
-
-### #6 — Refonte `clsTableMetadata` → `clsResultMetadata` 🟢
-**Scope :** Impact massif sur toute la couche UI — à traiter quand la base est stabilisée
 
 ### #7 — Automatisation callback OAuth2 via Freebox 🟢
 **Scope :** `clsTeslaAuth` + infra Freebox — différé sine die
@@ -213,9 +308,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO r_backup;
 | #5 | Refactoring architecture — dette technique     | Voir détail ci-dessus                                                        |
 | #11| Restructuration `__init__.py`                  | Voir détail ci-dessus                                                        |
 | #2 | Page charge — 3 onglets                        | Voir détail ci-dessus                                                        |
-| #10 | Suivi pg_cron                                  | Base postgres + entités RO + UI double datagrid + améliorations FWK          |
-| #12 | Sauvegarde `db_tstat_data`                    | Droits SELECT séquences manquants sur `r_backup` — corrigé 03/05/2026        |
-| #13 | Diagnostic échec jobs pg_cron                 | pg_cron → TCP IPv6 (::1) sans règle trust — 3 règles pg_hba.conf ajoutées — corrigé 05/05/2026 |
+| #10 | Suivi pg_cron                                 | Base postgres + entités RO + UI double datagrid + améliorations FWK          |
+| #12 | Sauvegarde `db_tstat_data`                   | Droits SELECT séquences manquants sur `r_backup` — corrigé 03/05/2026        |
+| #13 | Diagnostic échec jobs pg_cron                | pg_cron → TCP IPv6 (::1) sans règle trust — 3 règles pg_hba.conf ajoutées — corrigé 05/05/2026 |
 
 ---
 

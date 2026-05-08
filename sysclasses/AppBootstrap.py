@@ -189,6 +189,8 @@ class AppBootstrap:
             self._erreur_fatale_console(titre, message)
         elif self._mode == 'streamlit':
             self._erreur_fatale_streamlit(titre, message)
+        elif self._mode == 'qt':
+            self._erreur_fatale_qt(titre, message)
         else:
             self._erreur_fatale_ui(titre, message)
 
@@ -241,6 +243,33 @@ class AppBootstrap:
 
         # Pas de contexte Streamlit actif → comportement console
         raise RuntimeError(msg_complet)
+    
+    def _erreur_fatale_qt(self, titre: str, message: str):
+        """
+        Mode Qt : QMessageBox d'erreur puis arrêt propre.
+        QApplication doit exister avant cet appel —
+        garanti car AppBootstrap est instancié après QApplication()
+        dans le point d'entrée du projet.
+        PyQt6 n'est importé qu'ici — pas de dépendance au niveau module.
+        """
+        msg_complet = f"{titre} | {message}"
+
+        if hasattr(self, 'oLog') and self.oLog:
+            self.oLog.critical(f"AppBootstrap | {msg_complet}")
+        else:
+            print(f"\n[ERREUR FATALE] {msg_complet}\n", file=sys.stderr)
+
+        try:
+            from PyQt6.QtWidgets import QMessageBox
+            boite = QMessageBox()
+            boite.setIcon(QMessageBox.Icon.Critical)
+            boite.setWindowTitle(titre)
+            boite.setText(message)
+            boite.exec()
+        except Exception:
+            print(f"\n[ERREUR FATALE] {titre}\n{message}\n", file=sys.stderr)
+        finally:
+            raise SystemExit(1)
 
     def _erreur_fatale_ui(self, titre: str, message: str):
         """
