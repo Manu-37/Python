@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from ui.theme import AppTheme
 from ui.sidebar import Sidebar
-from ui.views.gestion_bases import EnvControleur
+from ui.views.gestion_bases import EnvControleur, BasControleur
 
 
 # ------------------------------------------------------------------
@@ -25,7 +25,7 @@ from ui.views.gestion_bases import EnvControleur
 DEFINITION_MENU = [
     ("Catalogue", [
         ("environnements", "Environnements",         EnvControleur, True),
-        ("bases",          "Bases de données",       None, True),
+        ("bases",          "Bases de données",       BasControleur, True),
         ("bas_env",        "Paramétrages bases/env", None, True),
     ]),
     ("Tesla", [

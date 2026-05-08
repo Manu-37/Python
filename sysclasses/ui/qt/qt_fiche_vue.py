@@ -13,24 +13,22 @@ class QtFicheVue(QWidget):
     Vue formulaire générique pour toute entité.
 
     Responsabilité unique : afficher un formulaire et émettre des signaux.
-    Ne connaît aucune entité métier.
-    Le style visuel est entièrement géré par le QSS global.
+    Ne connaît aucune entité métier — ne connaît pas insert/update/ctrl_valeurs.
 
-    Champs générés depuis clsTableMetadata :
-        QLineEdit  : champs standard et BINARY
-                     (les valeurs BINARY arrivent déjà décodées)
-        QComboBox  : colonnes FK
-        Readonly   : identity, PK non-FK
+    L'entité est passée par le contrôleur via charger().
+    La vue lit via getattr() — déchiffrement inclus via les getters.
+    La vue écrit via setattr() — chiffrement inclus via les setters.
+    Le contrôleur est responsable du CRUD et du commit.
 
     Signaux émis :
-        demande_enregistrement(valeurs: dict)
+        demande_enregistrement() — sans données, le contrôleur possède l'entité
         demande_annulation()
 
-    Hook surchargeable :
+    Hooks surchageables :
         _etendre_boutons(barre) — ajouter des boutons spécifiques
     """
 
-    demande_enregistrement = pyqtSignal(dict)
+    demande_enregistrement = pyqtSignal()
     demande_annulation     = pyqtSignal()
 
     MODE_AJOUT        = "INSERT"
@@ -41,10 +39,11 @@ class QtFicheVue(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        self._entite       = None   # objet entité courant — peuplé par charger()
+        self._mode         = self.MODE_CONSULTATION
         self._champs:           dict[str, QWidget] = {}
         self._fk_label_vers_id: dict[str, dict]    = {}
         self._fk_id_vers_label: dict[str, dict]    = {}
-        self._mode = self.MODE_CONSULTATION
 
         self._construire_ui()
 
@@ -111,12 +110,6 @@ class QtFicheVue(QWidget):
         """
         Appelé au début de _construire_boutons(), avant le stretch.
         Surcharger pour ajouter des boutons spécifiques à gauche.
-
-        Exemple :
-            def _etendre_boutons(self, barre):
-                self._btn_tester = QPushButton("Tester la connexion")
-                self._btn_tester.clicked.connect(self._tester)
-                barre.addWidget(self._btn_tester)
         """
         pass
 
@@ -128,8 +121,6 @@ class QtFicheVue(QWidget):
         """
         Génère les champs depuis la liste des métadonnées.
         Appelé une seule fois par le contrôleur à l'initialisation.
-
-        colonnes : liste de dicts issus de clsTableMetadata
         """
         while self._disposition_form.rowCount():
             self._disposition_form.removeRow(0)
@@ -151,8 +142,6 @@ class QtFicheVue(QWidget):
                 champ = QLineEdit()
                 champ.setFixedHeight(26)
 
-            # Identity et PK non-FK → toujours readonly
-            # Le QSS QLineEdit:read-only grise automatiquement
             if est_identity or (est_pk and not est_fk):
                 if isinstance(champ, QLineEdit):
                     champ.setReadOnly(True)
@@ -163,7 +152,6 @@ class QtFicheVue(QWidget):
             self._champs[nom] = champ
 
     def _libelle_colonne(self, col: dict) -> str:
-        """Dérive le libellé depuis le comment PostgreSQL ou le nom."""
         comment = col.get("comment") or ""
         if "|" in comment:
             return comment.split("|", 1)[0].strip()
@@ -197,20 +185,19 @@ class QtFicheVue(QWidget):
         combo.blockSignals(False)
 
     # ------------------------------------------------------------------
-    # Chargement des valeurs
+    # Chargement depuis l'entité
     # ------------------------------------------------------------------
 
-    def charger(self, mode: str, valeurs: dict | None = None):
+    def charger(self, mode: str, entite):
         """
-        Affiche le formulaire dans le mode demandé.
+        Affiche le formulaire depuis l'objet entité.
 
-        mode    : MODE_AJOUT / MODE_MODIFICATION / MODE_SUPPRESSION
-                  / MODE_CONSULTATION
-        valeurs : dict des valeurs à afficher — None pour un ajout.
-                  Les valeurs BINARY arrivent déjà décodées depuis
-                  le contrôleur via les getters de l'entité.
+        mode   : MODE_AJOUT / MODE_MODIFICATION / MODE_SUPPRESSION / MODE_CONSULTATION
+        entite : objet clsEntity_ABS instancié par le contrôleur.
+                 Lecture via getattr() — déchiffrement BINARY inclus via les getters.
         """
-        self._mode = mode
+        self._mode   = mode
+        self._entite = entite
 
         titres = {
             self.MODE_AJOUT:        "Ajout",
@@ -225,7 +212,8 @@ class QtFicheVue(QWidget):
         )
 
         for nom, champ in self._champs.items():
-            valeur = valeurs.get(nom) if valeurs else None
+            # Lecture via le getter de l'entité — déchiffrement inclus
+            valeur = getattr(entite, nom, None)
 
             if isinstance(champ, QComboBox):
                 label = self._fk_id_vers_label.get(nom, {}).get(valeur, "")
@@ -237,44 +225,53 @@ class QtFicheVue(QWidget):
                 if not champ.isReadOnly():
                     champ.setReadOnly(lecture_seule_totale)
 
-        self._btn_enregistrer.setVisible(
-            mode != self.MODE_CONSULTATION
-        )
+        self._btn_enregistrer.setVisible(mode != self.MODE_CONSULTATION)
         if mode == self.MODE_SUPPRESSION:
             self._btn_enregistrer.setText("Supprimer")
-            self._btn_enregistrer.setObjectName("bouton_suppression")
-            self._btn_enregistrer.style().unpolish(self._btn_enregistrer)
-            self._btn_enregistrer.style().polish(self._btn_enregistrer)
         else:
             self._btn_enregistrer.setText("Enregistrer")
-            self._btn_enregistrer.setObjectName("")
-            self._btn_enregistrer.style().unpolish(self._btn_enregistrer)
-            self._btn_enregistrer.style().polish(self._btn_enregistrer)
 
     # ------------------------------------------------------------------
-    # Lecture des valeurs saisies
+    # Écriture dans l'entité depuis les champs
     # ------------------------------------------------------------------
 
-    def _lire_valeurs(self) -> dict:
+    def _ecrire_dans_entite(self):
         """
-        Lit les valeurs de tous les champs.
-        Pour les FK : retourne l'id (pas le label).
+        Écrit les valeurs saisies dans l'entité via les setters.
+        Chiffrement BINARY inclus — transparent ici.
+        PK et identity ignorées — jamais modifiables.
         """
-        valeurs = {}
+        from db.clsTableMetadata import clsTableMetadata
+        metadata = self._entite.TableMetadata
+
         for nom, champ in self._champs.items():
+            col      = metadata.get_column(nom)
+            est_pk   = col["is_pk"]
+            est_fk   = col.get("is_fk", False)
+            est_iden = col["is_identity"]
+
+            # Ne jamais toucher aux identity et PK non-FK
+            if est_iden or (est_pk and not est_fk):
+                continue
+
             if isinstance(champ, QComboBox):
-                label_sel    = champ.currentText()
-                valeurs[nom] = self._fk_label_vers_id.get(
-                    nom, {}
-                ).get(label_sel)
+                label_sel = champ.currentText()
+                valeur    = self._fk_label_vers_id.get(nom, {}).get(label_sel)
             else:
-                texte        = champ.text().strip()
-                valeurs[nom] = texte if texte else None
-        return valeurs
+                texte  = champ.text().strip()
+                valeur = texte if texte else None
+
+            # Écriture via le setter — chiffrement inclus
+            setattr(self._entite, nom, valeur)
 
     # ------------------------------------------------------------------
     # Émission
     # ------------------------------------------------------------------
 
     def _on_enregistrer(self):
-        self.demande_enregistrement.emit(self._lire_valeurs())
+        """
+        Écrit les valeurs dans l'entité puis signale au contrôleur.
+        Le contrôleur appelle insert() ou update() — ctrl_valeurs() inclus.
+        """
+        self._ecrire_dans_entite()
+        self.demande_enregistrement.emit()
