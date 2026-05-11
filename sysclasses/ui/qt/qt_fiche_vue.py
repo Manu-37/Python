@@ -2,10 +2,11 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QLineEdit, QComboBox, QLabel,
+    QPushButton, QLineEdit, QComboBox, QCheckBox, QLabel,
     QScrollArea, QFrame
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QIntValidator, QDoubleValidator
 
 
 class QtFicheVue(QWidget):
@@ -36,7 +37,8 @@ class QtFicheVue(QWidget):
     MODE_SUPPRESSION  = "DELETE"
     MODE_CONSULTATION = "DISPLAY"
 
-    def __init__(self, parent=None):
+    def __init__(self, hook_boutons=None, hook_apres_chargement=None,
+                 parent=None):
         super().__init__(parent)
 
         self._entite       = None   # objet entité courant — peuplé par charger()
@@ -44,6 +46,12 @@ class QtFicheVue(QWidget):
         self._champs:           dict[str, QWidget] = {}
         self._fk_label_vers_id: dict[str, dict]    = {}
         self._fk_id_vers_label: dict[str, dict]    = {}
+
+        self._hook_boutons           = hook_boutons
+        self._hook_apres_chargement  = hook_apres_chargement
+
+        # Hauteur des champs calculée depuis la police active — s'adapte au DPI
+        self._hauteur_champ = self.fontMetrics().height() + 12
 
         self._construire_ui()
 
@@ -84,22 +92,22 @@ class QtFicheVue(QWidget):
     def _construire_boutons(self) -> QHBoxLayout:
         barre = QHBoxLayout()
 
-        # Hook — boutons spécifiques à gauche
-        self._etendre_boutons(barre)
-
         barre.addStretch()
 
         self._btn_enregistrer = QPushButton("Enregistrer")
-        self._btn_enregistrer.setFixedHeight(28)
         self._btn_enregistrer.clicked.connect(self._on_enregistrer)
 
         self._btn_annuler = QPushButton("Annuler")
-        self._btn_annuler.setFixedHeight(28)
         self._btn_annuler.setObjectName("bouton_secondaire")
         self._btn_annuler.clicked.connect(self.demande_annulation)
 
         barre.addWidget(self._btn_enregistrer)
         barre.addWidget(self._btn_annuler)
+
+        # Hook — boutons spécifiques à droite des boutons standard
+        self._etendre_boutons(barre)
+
+        barre.addStretch()
         return barre
 
     # ------------------------------------------------------------------
@@ -109,9 +117,15 @@ class QtFicheVue(QWidget):
     def _etendre_boutons(self, barre: QHBoxLayout):
         """
         Appelé au début de _construire_boutons(), avant le stretch.
-        Surcharger pour ajouter des boutons spécifiques à gauche.
+
+        Deux usages possibles, non exclusifs :
+          - Surcharger dans une sous-classe de QtFicheVue
+          - Passer hook_boutons au constructeur depuis QtControleur
+            La fiche (self) est passée en premier argument pour permettre
+            au contrôleur de stocker des références de boutons sur la fiche.
         """
-        pass
+        if self._hook_boutons:
+            self._hook_boutons(self, barre)
 
     # ------------------------------------------------------------------
     # Génération des champs depuis métadonnées
@@ -133,19 +147,31 @@ class QtFicheVue(QWidget):
             est_identity = col["is_identity"]
             est_pk       = col["is_pk"]
             est_fk       = col.get("is_fk", False)
+            est_bool     = (col.get("canonical_type") or ("OTHER",))[0] == "BOOLEAN"
             libelle      = self._libelle_colonne(col)
 
             if est_fk:
                 champ = QComboBox()
-                champ.setFixedHeight(26)
+                champ.setFixedHeight(self._hauteur_champ)
+            elif est_bool:
+                champ = QCheckBox()
             else:
                 champ = QLineEdit()
-                champ.setFixedHeight(26)
+                champ.setFixedHeight(self._hauteur_champ)
+                ctype   = col.get("canonical_type") or ("OTHER",)
+                famille = ctype[0] if isinstance(ctype, tuple) else "OTHER"
+                if famille == "NUMERIC":
+                    subtype = ctype[1] if len(ctype) > 1 else ""
+                    if subtype in ("INTEGER", "SERIAL",
+                                   "BIGINT", "BIGSERIAL", "SMALLINT"):
+                        champ.setValidator(QIntValidator())
+                    else:
+                        champ.setValidator(QDoubleValidator())
 
             if est_identity or (est_pk and not est_fk):
                 if isinstance(champ, QLineEdit):
                     champ.setReadOnly(True)
-                elif isinstance(champ, QComboBox):
+                elif isinstance(champ, (QComboBox, QCheckBox)):
                     champ.setEnabled(False)
 
             self._disposition_form.addRow(f"{libelle} :", champ)
@@ -218,8 +244,10 @@ class QtFicheVue(QWidget):
             if isinstance(champ, QComboBox):
                 label = self._fk_id_vers_label.get(nom, {}).get(valeur, "")
                 champ.setCurrentText(label)
-                champ.setEnabled(not lecture_seule_totale
-                                 and champ.isEnabled())
+                champ.setEnabled(not lecture_seule_totale and champ.isEnabled())
+            elif isinstance(champ, QCheckBox):
+                champ.setChecked(bool(valeur) if valeur is not None else False)
+                champ.setEnabled(not lecture_seule_totale and champ.isEnabled())
             else:
                 champ.setText("" if valeur is None else str(valeur))
                 if not champ.isReadOnly():
@@ -230,6 +258,9 @@ class QtFicheVue(QWidget):
             self._btn_enregistrer.setText("Supprimer")
         else:
             self._btn_enregistrer.setText("Enregistrer")
+
+        if self._hook_apres_chargement:
+            self._hook_apres_chargement(self, mode, entite)
 
     # ------------------------------------------------------------------
     # Écriture dans l'entité depuis les champs
@@ -254,12 +285,30 @@ class QtFicheVue(QWidget):
             if est_iden or (est_pk and not est_fk):
                 continue
 
-            if isinstance(champ, QComboBox):
+            if isinstance(champ, QCheckBox):
+                valeur = champ.isChecked()
+            elif isinstance(champ, QComboBox):
                 label_sel = champ.currentText()
                 valeur    = self._fk_label_vers_id.get(nom, {}).get(label_sel)
             else:
-                texte  = champ.text().strip()
-                valeur = texte if texte else None
+                texte = champ.text().strip()
+                if not texte:
+                    valeur = None
+                else:
+                    ctype   = col.get("canonical_type") or ("OTHER",)
+                    famille = ctype[0] if isinstance(ctype, tuple) else "OTHER"
+                    if famille == "NUMERIC":
+                        subtype = ctype[1] if len(ctype) > 1 else ""
+                        try:
+                            if subtype in ("INTEGER", "SERIAL",
+                                           "BIGINT", "BIGSERIAL", "SMALLINT"):
+                                valeur = int(texte)
+                            else:
+                                valeur = float(texte)
+                        except (ValueError, TypeError):
+                            valeur = texte
+                    else:
+                        valeur = texte
 
             # Écriture via le setter — chiffrement inclus
             setattr(self._entite, nom, valeur)

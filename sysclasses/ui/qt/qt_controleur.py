@@ -1,7 +1,7 @@
 # sysclasses/ui/qt/qt_controleur.py
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QSplitter, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from sysclasses.clsLOG import clsLOG
@@ -118,7 +118,8 @@ class QtControleur(QWidget):
     # ------------------------------------------------------------------
 
     def _creer_liste_vue(self) -> QtListeVue:
-        return QtListeVue(afficher_crud=self._afficher_crud)
+        return QtListeVue(afficher_crud=self._afficher_crud,
+                          hook_toolbar=self._etendre_toolbar_liste)
 
     def _creer_zone_basse(self) -> QWidget:
         """
@@ -136,8 +137,10 @@ class QtControleur(QWidget):
             return self._vue_fiche
 
     def _creer_fiche_vue(self) -> QtFicheVue:
-        """Surcharger pour injecter une QtFicheVue spécialisée."""
-        return QtFicheVue()
+        return QtFicheVue(
+            hook_boutons=self._etendre_boutons_fiche,
+            hook_apres_chargement=self._apres_chargement_fiche,
+        )
 
     # ------------------------------------------------------------------
     # Connexion des signaux
@@ -261,7 +264,7 @@ class QtControleur(QWidget):
                 lambda f=fiche: self._fermer_onglet_fiche(f)
             )
 
-            libelle = f"{self._classe_entite.__name__} — {mode}"
+            libelle = self._construire_libelle_onglet(fiche, entite, mode)
             self._on_ouvrir_fiche(libelle, fiche)
         else:
             self._vue_fiche.charger(mode, entite)
@@ -346,17 +349,62 @@ class QtControleur(QWidget):
         return True
 
     # ------------------------------------------------------------------
+    # Titre de l'onglet fiche externe — hook surchargeable
+    # ------------------------------------------------------------------
+
+    def _construire_libelle_onglet(self, fiche: QtFicheVue,
+                                   entite, mode: str) -> str:
+        """
+        Construit le libellé de l'onglet fiche externe.
+        Surcharger pour personnaliser.
+
+        Défaut :
+            INSERT → "Ajout"
+            autres → "Mode — label_pk1 / label_pk2"
+        Les valeurs PK sont résolues en labels FK si disponibles dans la fiche.
+        """
+        titres = {
+            QtFicheVue.MODE_AJOUT:        "Ajout",
+            QtFicheVue.MODE_MODIFICATION: "Modification",
+            QtFicheVue.MODE_SUPPRESSION:  "Suppression",
+            QtFicheVue.MODE_CONSULTATION: "Consultation",
+        }
+        titre = titres.get(mode, mode)
+
+        if mode == QtFicheVue.MODE_AJOUT:
+            return titre
+
+        pk_labels = []
+        for col_pk in self._metadata.primary_keys:
+            valeur = getattr(entite, col_pk, None)
+            if valeur is not None:
+                label = fiche._fk_id_vers_label.get(col_pk, {}).get(valeur)
+                if label:
+                    # Garde uniquement le premier segment "CODE — Description" → "CODE"
+                    pk_labels.append(label.split(" — ")[0].strip())
+                else:
+                    pk_labels.append(str(valeur))
+
+        if pk_labels:
+            return f"{titre} — {' / '.join(pk_labels)}"
+        return titre
+
+    # ------------------------------------------------------------------
     # Fermeture onglet fiche externe
     # ------------------------------------------------------------------
 
     def _fermer_onglet_fiche(self, fiche: QtFicheVue):
-        """Remonte l'arbre des parents pour trouver le QTabWidget."""
+        """
+        Remonte l'arbre des parents pour trouver le QTabWidget.
+        indexOf() est toujours appelé avec fiche (le widget ajouté via addTab),
+        pas avec le widget intermédiaire de la traversée.
+        """
         from PyQt6.QtWidgets import QTabWidget
         widget = fiche
         while widget is not None:
             parent = widget.parent()
             if isinstance(parent, QTabWidget):
-                index = parent.indexOf(widget)
+                index = parent.indexOf(fiche)
                 if index >= 0:
                     parent.removeTab(index)
                 return
@@ -373,6 +421,27 @@ class QtControleur(QWidget):
     # ------------------------------------------------------------------
     # Hooks
     # ------------------------------------------------------------------
+
+    def _etendre_toolbar_liste(self, barre: QHBoxLayout):
+        """Surcharger pour ajouter des boutons à la toolbar de la liste."""
+        pass
+
+    def _etendre_boutons_fiche(self, fiche: QtFicheVue, barre: QHBoxLayout):
+        """
+        Surcharger pour ajouter des boutons à la fiche.
+        fiche est passé pour permettre le stockage de références de boutons
+        directement sur le widget (ex: fiche._btn_recuperer = btn).
+        """
+        pass
+
+    def _apres_chargement_fiche(self, fiche: QtFicheVue,
+                                mode: str, entite):
+        """
+        Appelé après chaque charger() de la fiche.
+        Surcharger pour adapter l'état des boutons selon le mode.
+        ex: fiche._btn_recuperer.setEnabled(mode != QtFicheVue.MODE_AJOUT)
+        """
+        pass
 
     def _avant_enregistrement(self, entite):
         """Avant insert/update/delete."""

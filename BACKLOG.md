@@ -25,6 +25,7 @@
 | #7  | OAuth2 via Freebox                               | Basse    | Différé     |
 | #8  | `t_lieu_liu` — lieux manuels                     | Basse    | Différé     |
 | #15 | Gestion des colonnes protégées                   | Basse    | Différé     |
+| #26 | BaseRef_Manager_2026 — Préférences taille police | Basse    | À faire     |
 | #4  | Politique rétention snapshots OneDrive           | Normale  | Terminé     |
 
 ---
@@ -184,6 +185,11 @@ DB ihm (authoring)  →  [génération manuelle]  →  JSON chiffré par app+lan
 
 ### #8 — `t_lieu_liu` — lieux déclarés manuellement 🟢
 **Scope :** SQL + entité — différé sine die
+
+### #26 — BaseRef_Manager_2026 — Préférences taille de police 🟢
+**Scope :** Contrôle `+`/`-` dans la barre de menus permettant à l'utilisateur d'ajuster la taille de police globale. Persistance via `QSettings` (Registry Windows, clé `Despont/BaseRefManager2026`). Application immédiate : `AppTheme.FONT_SIZE_DEFAULT` mis à jour + `AppTheme.apply(app_qt)` rappelé. Les fiches déjà ouvertes conservent leur `_hauteur_champ` calculé à la construction — elles se mettent à jour à la prochaine ouverture.
+**Responsable :** Claude
+**Dépend de :** rien
 
 ### #15 — Gestion des colonnes protégées (chiffrées) 🟢
 **Scope :** Réflexion sur le concept de colonnes à accès restreint. Aujourd'hui les colonnes `BINARY` (Fernet) sont simplement masquées de l'affichage. À terme : définir une politique de visibilité, de droits et d'édition dans les composants UI — le concept n'est pas encore formalisé.

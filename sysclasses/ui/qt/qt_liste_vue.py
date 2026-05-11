@@ -32,9 +32,11 @@ class QtListeVue(QWidget):
     demande_suppression  = pyqtSignal(dict)
     demande_consultation = pyqtSignal(dict)
 
-    def __init__(self, afficher_crud: bool = True, parent=None):
+    def __init__(self, afficher_crud: bool = True,
+                 hook_toolbar=None, parent=None):
         super().__init__(parent)
         self._afficher_crud           = afficher_crud
+        self._hook_toolbar            = hook_toolbar
         self._ligne_selectionnee: dict | None = None
         self._colonnes: list[str]     = []
         self._construire_ui()
@@ -75,7 +77,6 @@ class QtListeVue(QWidget):
 
     def _creer_bouton(self, libelle: str, callback) -> QPushButton:
         btn = QPushButton(libelle)
-        btn.setFixedHeight(28)
         btn.clicked.connect(callback)
         return btn
 
@@ -107,13 +108,14 @@ class QtListeVue(QWidget):
     def _etendre_toolbar(self, barre: QHBoxLayout):
         """
         Appelé à la fin de _construire_toolbar(), avant le stretch.
-        Surcharger pour ajouter des boutons spécifiques.
 
-        Exemple :
-            def _etendre_toolbar(self, barre):
-                barre.addWidget(self._creer_bouton("Sync", self._sync))
+        Deux usages possibles, non exclusifs :
+          - Surcharger dans une sous-classe de QtListeVue
+          - Passer hook_toolbar au constructeur depuis QtControleur
+            (évite de sous-classer QtListeVue pour un seul bouton)
         """
-        pass
+        if self._hook_toolbar:
+            self._hook_toolbar(barre)
 
     # ------------------------------------------------------------------
     # Alimentation

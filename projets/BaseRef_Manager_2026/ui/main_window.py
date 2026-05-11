@@ -8,35 +8,38 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from ui.theme import AppTheme
 from ui.sidebar import Sidebar
-from ui.views.gestion_bases import EnvControleur, BasControleur
-
+from ui.views.gestion_bases import EnvControleur, BasControleur, BasEnvControleur
+from ui.views.Tesla import VEHControleur, TTKControleur
+from ui.views.Utilitaires import ChiffrementVue
+from ui.views.Administration import JobControleur
 
 # ------------------------------------------------------------------
 # Définition de la navigation
 # ------------------------------------------------------------------
-# Tuple par item : (identifiant, libelle, classe_page, singleton)
+# Format :
+#   3-tuple (id, libelle, enfants) → section pliable (niveau N)
+#   4-tuple (id, libelle, classe, singleton) → item feuille cliquable
 #
-# singleton=True  → un seul onglet liste, fiche affichée SOUS la liste
-# singleton=False → un seul onglet liste, fiche dans un NOUVEL onglet
-#
-# classe_page = None → placeholder, page non encore implémentée
+# singleton=True  → fiche affichée SOUS la liste (un seul onglet)
+# singleton=False → fiche dans un NOUVEL onglet
+# classe=None     → placeholder temporaire
 # ------------------------------------------------------------------
 
 DEFINITION_MENU = [
-    ("Catalogue", [
-        ("environnements", "Environnements",         EnvControleur, True),
-        ("bases",          "Bases de données",       BasControleur, True),
-        ("bas_env",        "Paramétrages bases/env", None, True),
+    ("catalogue", "Catalogue", [
+        ("environnements", "Environnements",         EnvControleur,    True),
+        ("bases",          "Bases de données",       BasControleur,    True),
+        ("bas_env",        "Paramétrages bases/env", BasEnvControleur, False),
     ]),
-    ("Tesla", [
-        ("vehicules",      "Véhicules",              None, True),
-        ("tokens",         "Tokens Tesla",           None, True),
+    ("tesla", "Tesla", [
+        ("vehicules",      "Véhicules",              VEHControleur,    True),
+        ("tokens",         "Tokens Tesla",           TTKControleur,    False),
     ]),
-    ("Utilitaires", [
-        ("chiffrement",    "Chiffrement",            None, True),
+    ("utilitaires", "Utilitaires", [
+        ("chiffrement",    "Chiffrement",            ChiffrementVue,   True),
     ]),
-    ("Administration", [
-        ("cron",           "Tâches planifiées",      None, True),
+    ("administration", "Administration", [
+        ("cron",           "Tâches planifiées",      JobControleur,    True),
     ]),
 ]
 
@@ -138,15 +141,26 @@ class MainWindow(QMainWindow):
         barre_laterale = Sidebar()
         barre_laterale.item_clicked.connect(self._on_navigation)
 
-        for libelle_theme, items in DEFINITION_MENU:
-            identifiant_theme = libelle_theme.lower().replace(" ", "_")
-            theme = barre_laterale.add_theme(identifiant_theme, libelle_theme)
-            for identifiant, libelle, _classe, singleton in items:
-                theme.add_item(identifiant, libelle, singleton)
+        for entree in DEFINITION_MENU:
+            self._ajouter_noeud_sidebar(barre_laterale, entree)
 
-        # Remplacement du placeholder par la vraie sidebar
         self._separateur.replaceWidget(0, barre_laterale)
         self._barre_laterale = barre_laterale
+
+    def _ajouter_noeud_sidebar(self, parent, entree: tuple):
+        """
+        Ajoute récursivement un nœud dans la sidebar.
+        3-tuple (id, libelle, enfants) → section pliable
+        4-tuple (id, libelle, classe, singleton) → item feuille
+        """
+        if len(entree) == 3:
+            id_, libelle, enfants = entree
+            theme = parent.add_theme(id_, libelle)
+            for enfant in enfants:
+                self._ajouter_noeud_sidebar(theme, enfant)
+        else:
+            id_, libelle, _classe, singleton = entree
+            parent.add_item(id_, libelle, singleton)
 
     # ------------------------------------------------------------------
     # Navigation
@@ -221,9 +235,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _get_classe(self, identifiant: str):
-        """Retrouve la classe associée à un identifiant dans DEFINITION_MENU."""
-        for _theme, items in DEFINITION_MENU:
-            for iid, _libelle, classe, _singleton in items:
+        """Retrouve récursivement la classe associée à un identifiant."""
+        return self._chercher_classe(identifiant, DEFINITION_MENU)
+
+    def _chercher_classe(self, identifiant: str, noeuds: list):
+        for entree in noeuds:
+            if len(entree) == 3:
+                resultat = self._chercher_classe(identifiant, entree[2])
+                if resultat is not None:
+                    return resultat
+            else:
+                iid, _libelle, classe, _singleton = entree
                 if iid == identifiant:
                     return classe
         return None
