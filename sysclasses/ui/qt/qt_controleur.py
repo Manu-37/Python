@@ -34,10 +34,13 @@ class QtControleur(QWidget):
         _ratio_initial  : 0.5 — proportion liste/zone basse
 
     Paramètres __init__ :
-        afficher_crud   : bool — prioritaire sur variable de classe
-        ratio_initial   : float — prioritaire sur variable de classe
-        on_ouvrir_fiche : callable(label, widget) — si fourni, la fiche
-                          s'ouvre dans un nouvel onglet externe
+        afficher_crud    : bool — prioritaire sur variable de classe
+        ratio_initial    : float — prioritaire sur variable de classe
+        on_ouvrir_fiche  : callable(label, widget) — si fourni, la fiche
+                           s'ouvre dans un nouvel onglet externe
+        on_ouvrir_onglet : callable(label, widget) — ouvre n'importe quel
+                           widget dans un onglet, indépendamment du singleton
+        where_clause     : str — filtre SQL initial appliqué à load_all()
 
     Hooks surchageables :
         _creer_liste_vue()
@@ -58,6 +61,8 @@ class QtControleur(QWidget):
     def __init__(self, afficher_crud: bool = None,
                  ratio_initial: float = None,
                  on_ouvrir_fiche=None,
+                 on_ouvrir_onglet=None,
+                 where_clause: str = None,
                  parent=None):
         super().__init__(parent)
 
@@ -71,11 +76,14 @@ class QtControleur(QWidget):
         if ratio_initial is not None:
             self._ratio_initial = ratio_initial
 
-        self._log             = clsLOG()
-        self._on_ouvrir_fiche = on_ouvrir_fiche
-        self._entite_courante = None
-        self._mode_courant    = None
-        self._metadata        = self._classe_entite.get_metadata()
+        self._log                 = clsLOG()
+        self._on_ouvrir_fiche     = on_ouvrir_fiche
+        self._on_ouvrir_onglet    = on_ouvrir_onglet
+        self._where_clause_filtre = where_clause
+        self._fk_maps:    dict[str, dict] = {}
+        self._entite_courante     = None
+        self._mode_courant        = None
+        self._metadata            = self._classe_entite.get_metadata()
 
         self._construire_ui()
         self._connecter_signaux()
@@ -178,17 +186,22 @@ class QtControleur(QWidget):
             for col in colonnes_liste
         ]
 
-        if self._vue_fiche:
-            cols_meta = [self._metadata.get_column(col) for col in colonnes]
-            self._vue_fiche.definir_champs(cols_meta)
+        # Charge les FK une seule fois — réutilisé par la liste et la fiche
+        entite_temp = self._classe_entite()
+        cols_meta   = [self._metadata.get_column(col) for col in colonnes]
+        fk_choix:   dict[str, list] = {}
+        self._fk_maps: dict[str, dict] = {}
+        for col in cols_meta:
+            if col.get("is_fk"):
+                choix                      = entite_temp.get_list_FK(col["name"])
+                fk_choix[col["name"]]      = choix
+                self._fk_maps[col["name"]] = {val_id: label for val_id, label in choix}
 
-            # Objet vide — accès à ogEngine via singleton clsDBAManager
-            entite_temp = self._classe_entite()
+        if self._vue_fiche:
+            self._vue_fiche.definir_champs(cols_meta)
             for col in cols_meta:
                 if col.get("is_fk"):
-                    choix = entite_temp.get_list_FK(col["name"])
-                    self._vue_fiche.charger_fk(col["name"], choix)
-
+                    self._vue_fiche.charger_fk(col["name"], fk_choix[col["name"]])
             self._vue_fiche.setVisible(False)
 
         self._colonnes_liste = colonnes_liste
@@ -197,11 +210,26 @@ class QtControleur(QWidget):
         self._rafraichir_liste()
 
     def _rafraichir_liste(self):
-        lignes = self._classe_entite.load_all(order_by=self._ordre_tri)
+        lignes = self._classe_entite.load_all(
+            order_by=self._ordre_tri,
+            where_clause=self._where_clause_filtre
+        )
+        if self._fk_maps:
+            lignes_affichage = []
+            for ligne in lignes:
+                ligne_aff = dict(ligne)
+                for col, mapping in self._fk_maps.items():
+                    if col in ligne_aff and ligne_aff[col] is not None:
+                        ligne_aff[col] = mapping.get(ligne_aff[col], ligne_aff[col])
+                lignes_affichage.append(ligne_aff)
+        else:
+            lignes_affichage = lignes
+
         self._vue_liste.charger(
             self._colonnes_liste,
             self._libelles_liste,
-            lignes
+            lignes_affichage,
+            lignes_data=lignes if self._fk_maps else None
         )
 
     # ------------------------------------------------------------------
@@ -317,23 +345,32 @@ class QtControleur(QWidget):
         try:
             self._avant_enregistrement(entite)
 
-            if mode == QtFicheVue.MODE_AJOUT:
-                entite.insert()
-            elif mode == QtFicheVue.MODE_MODIFICATION:
-                entite.update()
-            elif mode == QtFicheVue.MODE_SUPPRESSION:
-                entite.delete()
+            # Avertissement intercepté localement — la donnée est déjà persistée
+            # (AvertissementValidation est levé APRÈS le SQL dans clsEntity_ABS)
+            avertissement = None
+            try:
+                if mode == QtFicheVue.MODE_AJOUT:
+                    entite.insert()
+                elif mode == QtFicheVue.MODE_MODIFICATION:
+                    entite.update()
+                elif mode == QtFicheVue.MODE_SUPPRESSION:
+                    entite.delete()
+            except AvertissementValidation as e:
+                avertissement = str(e)
 
-            entite.ogEngine.commit()
             self._apres_enregistrement(entite)
+            entite.ogEngine.commit()
+
+            if avertissement:
+                QMessageBox.warning(self, "Avertissement", avertissement)
 
         except ErreurValidationBloquante as e:
+            try:
+                entite.ogEngine.rollback()
+            except Exception:
+                pass
             QMessageBox.critical(self, "Erreur de validation", str(e))
             return False
-
-        except AvertissementValidation as e:
-            entite.ogEngine.commit()
-            QMessageBox.warning(self, "Avertissement", str(e))
 
         except Exception as e:
             try:
@@ -390,8 +427,33 @@ class QtControleur(QWidget):
         return titre
 
     # ------------------------------------------------------------------
-    # Fermeture onglet fiche externe
+    # Ouverture / fermeture d'onglets
     # ------------------------------------------------------------------
+
+    def _ouvrir_onglet(self, libelle: str, widget: QWidget):
+        """
+        Ouvre widget dans un nouvel onglet.
+        Utilisable par tout contrôleur, indépendamment du mode singleton.
+        Si on_ouvrir_onglet est fourni, il est utilisé en priorité.
+        Sinon, remonte l'arbre des parents pour trouver le QTabWidget —
+        garanti car la sidebar ouvre toujours ses pages dans un QTabWidget.
+        """
+        if self._on_ouvrir_onglet:
+            self._on_ouvrir_onglet(libelle, widget)
+            return
+        from PyQt6.QtWidgets import QTabWidget
+        w = self
+        while w is not None:
+            parent = w.parent()
+            if isinstance(parent, QTabWidget):
+                index = parent.addTab(widget, libelle)
+                parent.setCurrentIndex(index)
+                return
+            w = parent
+        self._log.warning(
+            f"_ouvrir_onglet : aucun QTabWidget trouvé dans l'arbre des parents "
+            f"pour '{libelle}' — onglet non ouvert."
+        )
 
     def _fermer_onglet_fiche(self, fiche: QtFicheVue):
         """

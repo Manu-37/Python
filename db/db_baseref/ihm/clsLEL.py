@@ -15,8 +15,8 @@ class clsLEL(clsIHM):
 
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
-        "ele_id": ["ele_cle", "ele_description"],
-        "lan_id": ["lan_code", "lan_nom"],
+        "ele_id": ["ele_cle"],
+        "lan_id": ["lan_code"],
     }
 
     # 3. NAISSANCE

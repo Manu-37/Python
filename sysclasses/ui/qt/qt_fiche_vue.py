@@ -3,7 +3,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QLineEdit, QComboBox, QCheckBox, QLabel,
-    QScrollArea, QFrame
+    QScrollArea, QSplitter, QFrame
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIntValidator, QDoubleValidator
@@ -38,7 +38,7 @@ class QtFicheVue(QWidget):
     MODE_CONSULTATION = "DISPLAY"
 
     def __init__(self, hook_boutons=None, hook_apres_chargement=None,
-                 parent=None):
+                 hook_contenu=None, afficher_boutons: bool = True, parent=None):
         super().__init__(parent)
 
         self._entite       = None   # objet entité courant — peuplé par charger()
@@ -49,6 +49,8 @@ class QtFicheVue(QWidget):
 
         self._hook_boutons           = hook_boutons
         self._hook_apres_chargement  = hook_apres_chargement
+        self._hook_contenu           = hook_contenu
+        self._afficher_boutons       = afficher_boutons
 
         # Hauteur des champs calculée depuis la police active — s'adapte au DPI
         self._hauteur_champ = self.fontMetrics().height() + 12
@@ -85,12 +87,16 @@ class QtFicheVue(QWidget):
         self._disposition_form.setSpacing(8)
         self._disposition_form.setContentsMargins(8, 8, 8, 8)
         zone_scroll.setWidget(contenu_scroll)
-        disposition.addWidget(zone_scroll, 1)
 
-        disposition.addLayout(self._construire_boutons())
+        self._etendre_contenu(disposition, zone_scroll)
+
+        if self._afficher_boutons:
+            disposition.addLayout(self._construire_boutons())
 
     def _construire_boutons(self) -> QHBoxLayout:
         barre = QHBoxLayout()
+        barre.setContentsMargins(0, 8, 0, 8)
+        barre.setSpacing(8)
 
         barre.addStretch()
 
@@ -111,8 +117,24 @@ class QtFicheVue(QWidget):
         return barre
 
     # ------------------------------------------------------------------
-    # Hook boutons
+    # Hooks
     # ------------------------------------------------------------------
+
+    def _etendre_contenu(self, disposition: QVBoxLayout, zone_scroll: QScrollArea):
+        """
+        Sans hook_contenu : zone_scroll ajoutée directement au layout.
+        Avec hook_contenu  : un QSplitter(Vertical) est créé — zone_scroll en haut,
+                             le hook ajoute son widget en bas via splitter.addWidget().
+        """
+        if self._hook_contenu:
+            splitter = QSplitter(Qt.Orientation.Vertical)
+            splitter.addWidget(zone_scroll)
+            self._hook_contenu(self, splitter)
+            splitter.setStretchFactor(0, 1)
+            splitter.setStretchFactor(1, 0)
+            disposition.addWidget(splitter, 1)
+        else:
+            disposition.addWidget(zone_scroll, 1)
 
     def _etendre_boutons(self, barre: QHBoxLayout):
         """
@@ -241,23 +263,27 @@ class QtFicheVue(QWidget):
             # Lecture via le getter de l'entité — déchiffrement inclus
             valeur = getattr(entite, nom, None)
 
+            # Propriété sans setter → toujours en lecture seule (ex. cree_le, modifie_le)
+            sans_setter   = self._est_sans_setter(type(entite), nom)
+            lecture_seule = lecture_seule_totale or sans_setter
+
             if isinstance(champ, QComboBox):
                 label = self._fk_id_vers_label.get(nom, {}).get(valeur, "")
                 champ.setCurrentText(label)
-                champ.setEnabled(not lecture_seule_totale and champ.isEnabled())
+                champ.setEnabled(not lecture_seule and champ.isEnabled())
             elif isinstance(champ, QCheckBox):
                 champ.setChecked(bool(valeur) if valeur is not None else False)
-                champ.setEnabled(not lecture_seule_totale and champ.isEnabled())
+                champ.setEnabled(not lecture_seule and champ.isEnabled())
             else:
                 champ.setText("" if valeur is None else str(valeur))
                 if not champ.isReadOnly():
-                    champ.setReadOnly(lecture_seule_totale)
+                    champ.setReadOnly(lecture_seule)
 
-        self._btn_enregistrer.setVisible(mode != self.MODE_CONSULTATION)
-        if mode == self.MODE_SUPPRESSION:
-            self._btn_enregistrer.setText("Supprimer")
-        else:
-            self._btn_enregistrer.setText("Enregistrer")
+        if self._afficher_boutons:
+            self._btn_enregistrer.setVisible(mode != self.MODE_CONSULTATION)
+            self._btn_enregistrer.setText(
+                "Supprimer" if mode == self.MODE_SUPPRESSION else "Enregistrer"
+            )
 
         if self._hook_apres_chargement:
             self._hook_apres_chargement(self, mode, entite)
@@ -265,6 +291,11 @@ class QtFicheVue(QWidget):
     # ------------------------------------------------------------------
     # Écriture dans l'entité depuis les champs
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _est_sans_setter(cls_entite, nom: str) -> bool:
+        prop = getattr(cls_entite, nom, None)
+        return isinstance(prop, property) and prop.fset is None
 
     def _ecrire_dans_entite(self):
         """
@@ -290,6 +321,8 @@ class QtFicheVue(QWidget):
             elif isinstance(champ, QComboBox):
                 label_sel = champ.currentText()
                 valeur    = self._fk_label_vers_id.get(nom, {}).get(label_sel)
+            elif self._est_sans_setter(type(self._entite), nom):
+                continue
             else:
                 texte = champ.text().strip()
                 if not texte:
@@ -316,6 +349,10 @@ class QtFicheVue(QWidget):
     # ------------------------------------------------------------------
     # Émission
     # ------------------------------------------------------------------
+
+    def soumettre(self):
+        """Point d'entrée public — utilisé quand les boutons sont gérés à l'extérieur."""
+        self._on_enregistrer()
 
     def _on_enregistrer(self):
         """

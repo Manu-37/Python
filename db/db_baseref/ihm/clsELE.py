@@ -16,8 +16,8 @@ class clsELE(clsIHM):
 
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
-        "app_id": ["app_code", "app_nom"],
-        "tel_id": ["tel_code", "tel_nom"],
+        "app_id": ["app_code"],
+        "tel_id": ["tel_code"],
     }
 
     # 3. NAISSANCE

@@ -8,15 +8,16 @@ class clsLCO(clsIHM):
     # 2. DICTIONNAIRE DES COLONNES
     COL_ID         = "col_id"
     LAN_ID         = "lan_id"
-    LCO_LABEL      = "lco_label"
-    LCO_TOOLTIP    = "lco_tooltip"
-    LCO_CREE_LE    = "lco_cree_le"
+    LCO_LABEL       = "lco_label"
+    LCO_LABEL_COURT = "lco_label_court"
+    LCO_TOOLTIP     = "lco_tooltip"
+    LCO_CREE_LE     = "lco_cree_le"
     LCO_MODIFIE_LE = "lco_modifie_le"
 
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
         "col_id": ["col_nom"],
-        "lan_id": ["lan_code", "lan_nom"],
+        "lan_id": ["lan_code"],
     }
 
     # 3. NAISSANCE
@@ -45,6 +46,14 @@ class clsLCO(clsIHM):
             erreurs.append("ERREUR : Le libellé est obligatoire.")
             flag_error = True
 
+        if not self.lco_label_court:
+            self.ogLog.error(f"LCO {self.col_id}/{self.lan_id} : Le libellé court est obligatoire.")
+            erreurs.append("ERREUR : Le libellé court est obligatoire.")
+            flag_error = True
+
+        if not self.lco_tooltip:
+            self.ogLog.error(f"LCO {self.col_id}/{self.lan_id} : L'info-bulle est obligatoire.")
+            erreurs.append("ERREUR : L'info-bulle est fortement conseillée.")
         return flag_error, "\n".join(erreurs)
 
     # 5. ACCÈS
@@ -72,6 +81,14 @@ class clsLCO(clsIHM):
     @lco_label.setter
     def lco_label(self, valeur: str):
         self.set_natural(self.LCO_LABEL, valeur)
+
+    @property
+    def lco_label_court(self) -> str:
+        return self.get_natural(self.LCO_LABEL_COURT)
+
+    @lco_label_court.setter
+    def lco_label_court(self, valeur: str):
+        self.set_natural(self.LCO_LABEL_COURT, valeur)
 
     @property
     def lco_tooltip(self) -> str:

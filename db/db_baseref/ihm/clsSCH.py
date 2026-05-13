@@ -14,7 +14,7 @@ class clsSCH(clsIHM):
 
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
-        "db_id": ["db_code", "db_nom"],
+        "db_id": ["db_code"],
     }
 
     # 3. NAISSANCE

@@ -16,7 +16,7 @@ class clsREL(clsIHM):
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
         "sch_id": ["sch_nom"],
-        "tre_id": ["tre_code", "tre_nom"],
+        "tre_id": ["tre_code"],
     }
 
     # 3. NAISSANCE

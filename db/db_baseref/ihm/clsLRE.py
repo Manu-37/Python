@@ -16,7 +16,7 @@ class clsLRE(clsIHM):
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
         "rel_id": ["rel_nom"],
-        "lan_id": ["lan_code", "lan_nom"],
+        "lan_id": ["lan_code"],
     }
 
     # 3. NAISSANCE

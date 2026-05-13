@@ -14,8 +14,8 @@ class clsNAL(clsIHM):
 
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
-        "app_id": ["app_code", "app_nom"],
-        "lan_id": ["lan_code", "lan_nom"],
+        "app_id": ["app_code"],
+        "lan_id": ["lan_code"],
     }
 
     # 3. NAISSANCE

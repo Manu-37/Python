@@ -7,11 +7,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from ui.theme import AppTheme
-from ui.sidebar import Sidebar
+from sysclasses.ui.qt import Sidebar
 from ui.views.gestion_bases import EnvControleur, BasControleur, BasEnvControleur
 from ui.views.Tesla import VEHControleur, TTKControleur
 from ui.views.Utilitaires import ChiffrementVue
 from ui.views.Administration import JobControleur
+from ui.views.ihm import LANControleur, TELControleur, TREControleur, TAFControleur 
+from ui.views.ihm import DBControleur,SCHControleur, RELControleur, LREControleur
+from ui.views.ihm import COLControleur, LCOControleur
 
 # ------------------------------------------------------------------
 # Définition de la navigation
@@ -27,20 +30,52 @@ from ui.views.Administration import JobControleur
 
 DEFINITION_MENU = [
     ("catalogue", "Catalogue", [
-        ("environnements", "Environnements",         EnvControleur,    True),
-        ("bases",          "Bases de données",       BasControleur,    True),
+        ("enc", "Environnements",         EnvControleur,    True),
+        ("bas",          "Bases de données",       BasControleur,    True),
         ("bas_env",        "Paramétrages bases/env", BasEnvControleur, False),
     ]),
     ("tesla", "Tesla", [
-        ("vehicules",      "Véhicules",              VEHControleur,    True),
-        ("tokens",         "Tokens Tesla",           TTKControleur,    False),
+        ("veh",      "Véhicules",              VEHControleur,    True),
+        ("ttk",         "Tokens Tesla",           TTKControleur,    False),
     ]),
     ("utilitaires", "Utilitaires", [
         ("chiffrement",    "Chiffrement",            ChiffrementVue,   True),
     ]),
     ("administration", "Administration", [
-        ("cron",           "Tâches planifiées",      JobControleur,    True),
+        ("job",           "Tâches planifiées",      JobControleur,    True),
     ]),
+    ("ihm", "Gestion des IHM", [
+        ("i18n", "Internationalisation des projets", [
+            ("projets",    "Projets",[
+                    ("app", "Projets",          None,             True),
+                    ("nal", "langues projet",   None,             True),
+            ]),
+            ("ihm",        "IHM",[
+                    ("ele", "Element IHM",      None,             True),
+                    ("lel", "langues IHM",      None,             True),
+
+            ]),
+        ]),
+        ("i18ndb",        "Data Bases", [
+            ("db",   "Bases de données",            DBControleur,             False),  
+            ("sch", "Schémas",                      SCHControleur,             True),
+            ("relations", "Tables, vues, etc.",[
+                    ("rel", "Relations",            RELControleur,             True),
+                    ("lre", "Libelles relations",   LREControleur,             True),
+            ]),
+            ("colonnes", "Colonnes", [
+                    ("col", "Colonnes",             COLControleur,             True),
+                    ("lco", "Libelles colonnes",    LCOControleur,             True),
+            ]),
+        ]),
+        ("references", "Tables de référence",[
+             ("lan",        "Langues",                  LANControleur,             True),
+             ("tel",  "Types d'éléments graphique",     TELControleur,             True),
+             ("tre", "Types de relations",              TREControleur,             True),
+             ("taf",  "Types de colonnes",              TAFControleur,             True),
+        ]),
+    ]),
+    
 ]
 
 
@@ -145,6 +180,7 @@ class MainWindow(QMainWindow):
             self._ajouter_noeud_sidebar(barre_laterale, entree)
 
         self._separateur.replaceWidget(0, barre_laterale)
+        self._separateur.setSizes([210, 9999])
         self._barre_laterale = barre_laterale
 
     def _ajouter_noeud_sidebar(self, parent, entree: tuple):

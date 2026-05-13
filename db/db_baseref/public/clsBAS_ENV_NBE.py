@@ -15,8 +15,8 @@ class clsBAS_ENV_NBE(clsBaseRef):
     # Pour chaque colonne FK : liste ordonnée des colonnes à afficher.
     # Premier élément = colonne de tri dans le combo.
     FK_DISPLAY = {
-        "env_id": ["env_code", "env_description"],
-        "bas_id": ["bas_nom",  "bas_description"],
+        "env_id": ["env_code"],
+        "bas_id": ["bas_nom"],
     }
 
     # Connexion de base

@@ -1,11 +1,11 @@
-# ui/sidebar.py
+# sysclasses/ui/qt/sidebar.py
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton,
     QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from ui.theme import AppTheme
+from .qt_theme import QtTheme
 
 _INDENT = 14   # décalage horizontal par niveau de profondeur
 
@@ -28,7 +28,7 @@ class SidebarItem(QPushButton):
         self.setFixedHeight(30)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-        clr          = AppTheme.CLR_TAB_SINGLETON if singleton else AppTheme.CLR_TAB_MULTI
+        clr          = QtTheme.CLR_TAB_SINGLETON if singleton else QtTheme.CLR_TAB_MULTI
         padding_left = 20 + depth * _INDENT
         self.setStyleSheet(f"""
             QPushButton {{
@@ -75,8 +75,8 @@ class SidebarTheme(QWidget):
                 text-align: left;
                 padding: 0px 8px 0px {padding_left}px;
                 font-weight: bold;
-                font-size: {AppTheme.FONT_SIZE_DEFAULT}pt;
-                border-bottom: 1px solid {AppTheme.CLR_BORDER};
+                font-size: {QtTheme.FONT_SIZE_DEFAULT}pt;
+                border-bottom: 1px solid {QtTheme.CLR_BORDER};
             }}
         """)
         self._header.clicked.connect(self._toggle)
@@ -161,7 +161,8 @@ class Sidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(210)
+        self.setMinimumWidth(160)
+        self.setMaximumWidth(480)
         self._themes: list[SidebarTheme] = []
 
         root_layout = QVBoxLayout(self)
@@ -182,6 +183,10 @@ class Sidebar(QWidget):
 
         scroll.setWidget(self._inner)
         root_layout.addWidget(scroll)
+
+    def sizeHint(self):
+        from PyQt6.QtCore import QSize
+        return QSize(210, super().sizeHint().height())
 
     def add_theme(self, theme_id: str, label: str) -> SidebarTheme:
         theme = SidebarTheme(theme_id, label, depth=0)

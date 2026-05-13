@@ -11,6 +11,7 @@ class clsLAN(clsIHM):
     LAN_NOM        = "lan_nom"
     LAN_RTL        = "lan_rtl"
     LAN_ACTIF      = "lan_actif"
+    LAN_ORDRE      = "lan_ordre"
     LAN_CREE_LE    = "lan_cree_le"
     LAN_MODIFIE_LE = "lan_modifie_le"
 
@@ -80,6 +81,14 @@ class clsLAN(clsIHM):
     @lan_actif.setter
     def lan_actif(self, valeur: bool):
         self.set_natural(self.LAN_ACTIF, valeur)
+
+    @property
+    def lan_ordre(self) -> int:
+        return self.get_natural(self.LAN_ORDRE)
+
+    @lan_ordre.setter
+    def lan_ordre(self, valeur: int):
+        self.set_natural(self.LAN_ORDRE, valeur)
 
     @property
     def lan_cree_le(self):

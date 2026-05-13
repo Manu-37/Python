@@ -3,9 +3,10 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView
+    QHeaderView, QAbstractItemView, QMenu
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction
 
 
 class QtListeVue(QWidget):
@@ -39,6 +40,7 @@ class QtListeVue(QWidget):
         self._hook_toolbar            = hook_toolbar
         self._ligne_selectionnee: dict | None = None
         self._colonnes: list[str]     = []
+        self._actions_etendues: list[tuple[QPushButton, QAction]] = []
         self._construire_ui()
 
     # ------------------------------------------------------------------
@@ -71,7 +73,9 @@ class QtListeVue(QWidget):
                 barre.addWidget(btn)
 
         # Hook — boutons spécifiques à droite des boutons CRUD
+        nb_avant = barre.count()
         self._etendre_toolbar(barre)
+        self._scanner_actions_etendues(barre, nb_avant)
         barre.addStretch()
         return barre
 
@@ -99,6 +103,12 @@ class QtListeVue(QWidget):
         self._tableau.horizontalHeader().setStretchLastSection(True)
         self._tableau.itemSelectionChanged.connect(self._on_selection)
         self._tableau.doubleClicked.connect(lambda: self._on_modifier())
+        self._tableau.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self._tableau.customContextMenuRequested.connect(
+            self._on_menu_contextuel
+        )
         return self._tableau
 
     # ------------------------------------------------------------------
@@ -113,16 +123,68 @@ class QtListeVue(QWidget):
           - Surcharger dans une sous-classe de QtListeVue
           - Passer hook_toolbar au constructeur depuis QtControleur
             (évite de sous-classer QtListeVue pour un seul bouton)
+
+        Ajouter des QPushButton directement dans la barre via barre.addWidget() —
+        ils sont détectés automatiquement par _scanner_actions_etendues() et
+        apparaissent dans le menu contextuel sans aucune action supplémentaire.
         """
         if self._hook_toolbar:
             self._hook_toolbar(barre)
+
+    def _scanner_actions_etendues(self, barre: QHBoxLayout, depuis: int):
+        """
+        Parcourt les widgets ajoutés après l'index `depuis` dans la barre
+        et crée automatiquement une QAction pour chaque QPushButton trouvé.
+        L'action délègue à btn.click() — source unique, zéro duplication.
+        """
+        for i in range(depuis, barre.count()):
+            item = barre.itemAt(i)
+            if item:
+                widget = item.widget()
+                if isinstance(widget, QPushButton):
+                    action = QAction(widget.text(), self)
+                    action.triggered.connect(widget.click)
+                    self._actions_etendues.append((widget, action))
+
+    # ------------------------------------------------------------------
+    # Menu contextuel
+    # ------------------------------------------------------------------
+
+    def _on_menu_contextuel(self, pos):
+        menu = QMenu(self)
+
+        if self._afficher_crud:
+            a_ajouter = QAction("Ajouter", self)
+            a_ajouter.triggered.connect(self.demande_ajout)
+            menu.addAction(a_ajouter)
+
+            selection = self._ligne_selectionnee is not None
+            for libelle, callback in (
+                ("Modifier",  self._on_modifier),
+                ("Supprimer", self._on_supprimer),
+                ("Consulter", self._on_consulter),
+            ):
+                a = QAction(libelle, self)
+                a.triggered.connect(callback)
+                a.setEnabled(selection)
+                menu.addAction(a)
+
+        if self._actions_etendues:
+            if self._afficher_crud:
+                menu.addSeparator()
+            for btn, action in self._actions_etendues:
+                action.setEnabled(btn.isEnabled())
+                menu.addAction(action)
+
+        if not menu.isEmpty():
+            menu.exec(self._tableau.viewport().mapToGlobal(pos))
 
     # ------------------------------------------------------------------
     # Alimentation
     # ------------------------------------------------------------------
 
     def charger(self, colonnes: list[str], libelles: list[str],
-                lignes: list[dict]):
+                lignes: list[dict], lignes_data: list[dict] = None):
         """
         Alimente le tableau sans reconstruire le widget.
 
@@ -138,15 +200,16 @@ class QtListeVue(QWidget):
         self._tableau.setHorizontalHeaderLabels(libelles)
 
         for numero_ligne, ligne in enumerate(lignes):
+            donnee = lignes_data[numero_ligne] if lignes_data else ligne
             self._tableau.insertRow(numero_ligne)
             for numero_col, col in enumerate(colonnes):
                 valeur = ligne.get(col, "")
                 item   = QTableWidgetItem(
                     "" if valeur is None else str(valeur)
                 )
-                # Données complètes stockées sur la colonne 0
+                # Données originales (IDs) stockées sur la colonne 0
                 if numero_col == 0:
-                    item.setData(Qt.ItemDataRole.UserRole, ligne)
+                    item.setData(Qt.ItemDataRole.UserRole, donnee)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter)
                 self._tableau.setItem(numero_ligne, numero_col, item)
 

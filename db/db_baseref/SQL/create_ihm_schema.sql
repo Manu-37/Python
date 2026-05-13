@@ -48,6 +48,7 @@ CREATE TABLE ihm.t_langue_lan (
     lan_nom        VARCHAR(128) NOT NULL,
     lan_rtl        BOOLEAN      NOT NULL DEFAULT FALSE,
     lan_actif      BOOLEAN      NOT NULL DEFAULT TRUE,
+    lan_ordre      INTEGER      NOT NULL DEFAULT 0,
     lan_cree_le    TIMESTAMPTZ  NOT NULL,
     lan_modifie_le TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_lan      PRIMARY KEY (lan_id),
@@ -223,7 +224,7 @@ CREATE TABLE ihm.t_libelle_relation_lre (
     lre_cree_le    TIMESTAMPTZ  NOT NULL,
     lre_modifie_le TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_lre     PRIMARY KEY (rel_id, lan_id),
-    CONSTRAINT fk_lre_rel FOREIGN KEY (rel_id) REFERENCES ihm.t_relation_rel (rel_id),
+    CONSTRAINT fk_lre_rel FOREIGN KEY (rel_id) REFERENCES ihm.t_relation_rel (rel_id) ON DELETE CASCADE,
     CONSTRAINT fk_lre_lan FOREIGN KEY (lan_id) REFERENCES ihm.t_langue_lan   (lan_id)
 );
 CREATE TRIGGER trg_audit_lre
@@ -241,7 +242,7 @@ CREATE TABLE ihm.t_libelle_element_lel (
     lel_cree_le    TIMESTAMPTZ  NOT NULL,
     lel_modifie_le TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_lel     PRIMARY KEY (ele_id, lan_id),
-    CONSTRAINT fk_lel_ele FOREIGN KEY (ele_id) REFERENCES ihm.t_element_ele (ele_id),
+    CONSTRAINT fk_lel_ele FOREIGN KEY (ele_id) REFERENCES ihm.t_element_ele (ele_id) ON DELETE CASCADE,
     CONSTRAINT fk_lel_lan FOREIGN KEY (lan_id) REFERENCES ihm.t_langue_lan  (lan_id)
 );
 CREATE TRIGGER trg_audit_lel
@@ -275,11 +276,12 @@ CREATE TABLE ihm.t_libelle_colonne_lco (
     col_id         BIGINT       NOT NULL,
     lan_id         BIGINT       NOT NULL,
     lco_label      VARCHAR(128) NOT NULL,
+    lco_label_court VARCHAR(15),
     lco_tooltip    VARCHAR(512),
     lco_cree_le    TIMESTAMPTZ  NOT NULL,
     lco_modifie_le TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_lco     PRIMARY KEY (col_id, lan_id),
-    CONSTRAINT fk_lco_col FOREIGN KEY (col_id) REFERENCES ihm.t_colonne_col (col_id),
+    CONSTRAINT fk_lco_col FOREIGN KEY (col_id) REFERENCES ihm.t_colonne_col (col_id) ON DELETE CASCADE,
     CONSTRAINT fk_lco_lan FOREIGN KEY (lan_id) REFERENCES ihm.t_langue_lan  (lan_id)
 );
 CREATE TRIGGER trg_audit_lco

@@ -136,8 +136,6 @@ class clsEntity_ABS(clsDB_ABS):
         flag_erreur, libelle_erreur = self.ctrl_valeurs()
         if flag_erreur:
             raise ErreurValidationBloquante(libelle_erreur)
-        elif libelle_erreur:
-            raise AvertissementValidation(libelle_erreur)
 
         metadata = self.TableMetadata
         pk_cols  = metadata.primary_keys
@@ -170,9 +168,15 @@ class clsEntity_ABS(clsDB_ABS):
             setattr(self, auto_pk, returned[0])
 
         if len(pk_cols) == 1:
-            return getattr(self, pk_cols[0])
+            resultat = getattr(self, pk_cols[0])
         else:
-            return tuple(getattr(self, col) for col in pk_cols)
+            resultat = tuple(getattr(self, col) for col in pk_cols)
+
+        # Avertissement levé APRÈS le save — opération autorisée, donnée persistée
+        if libelle_erreur:
+            raise AvertissementValidation(libelle_erreur)
+
+        return resultat
 
     def update(self):
         """
@@ -183,8 +187,6 @@ class clsEntity_ABS(clsDB_ABS):
         flag_erreur, libelle_erreur = self.ctrl_valeurs()
         if flag_erreur:
             raise ErreurValidationBloquante(libelle_erreur)
-        elif libelle_erreur:
-            raise AvertissementValidation(libelle_erreur)
 
         metadata = self.TableMetadata
         pk_cols  = metadata.primary_keys
@@ -230,6 +232,11 @@ class clsEntity_ABS(clsDB_ABS):
 
         # Après un UPDATE réussi, on resynchronise _data_original
         self._data_original = dict(self._data)
+
+        # Avertissement levé APRÈS le save — opération autorisée, donnée persistée
+        if libelle_erreur:
+            raise AvertissementValidation(libelle_erreur)
+
         return result
 
     def delete(self):

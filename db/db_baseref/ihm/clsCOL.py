@@ -17,7 +17,7 @@ class clsCOL(clsIHM):
     # 2b. AFFICHAGE COMBO FK
     FK_DISPLAY = {
         "rel_id": ["rel_nom"],
-        "taf_id": ["taf_code", "taf_nom"],
+        "taf_id": ["taf_code"],
     }
 
     # 3. NAISSANCE
