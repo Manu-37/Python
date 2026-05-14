@@ -1,6 +1,6 @@
-from ..clsBaseRef import clsBaseRef
+from .clsPublic import clsPublic    
 
-class clsENV(clsBaseRef):
+class clsENV(clsPublic):
     """
     Entité représentant un Environnement (PROD, TEST, DEV, etc.).
     """

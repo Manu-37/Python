@@ -182,7 +182,7 @@ class QtControleur(QWidget):
             if self._metadata.get_column(col)["canonical_type"][0] != "BINARY"
         ]
         libelles_liste = [
-            self._metadata.get_col_label(col)
+            self._metadata.get_col_label_court(col)
             for col in colonnes_liste
         ]
 
@@ -198,7 +198,7 @@ class QtControleur(QWidget):
                 self._fk_maps[col["name"]] = {val_id: label for val_id, label in choix}
 
         if self._vue_fiche:
-            self._vue_fiche.definir_champs(cols_meta)
+            self._vue_fiche.definir_champs(cols_meta, self._metadata)
             for col in cols_meta:
                 if col.get("is_fk"):
                     self._vue_fiche.charger_fk(col["name"], fk_choix[col["name"]])
@@ -206,7 +206,11 @@ class QtControleur(QWidget):
 
         self._colonnes_liste = colonnes_liste
         self._libelles_liste = libelles_liste
-        self._vue_liste.charger(colonnes_liste, libelles_liste, [])
+        self._largeurs_liste = [
+            self._metadata.get_col_width(col) for col in colonnes_liste
+        ]
+        self._vue_liste.charger(colonnes_liste, libelles_liste, [],
+                                largeurs=self._largeurs_liste)
         self._rafraichir_liste()
 
     def _rafraichir_liste(self):
@@ -229,7 +233,8 @@ class QtControleur(QWidget):
             self._colonnes_liste,
             self._libelles_liste,
             lignes_affichage,
-            lignes_data=lignes if self._fk_maps else None
+            lignes_data=lignes if self._fk_maps else None,
+            largeurs=self._largeurs_liste
         )
 
     # ------------------------------------------------------------------
@@ -275,7 +280,7 @@ class QtControleur(QWidget):
                 self._metadata.get_column(col)
                 for col in self._metadata.columns
             ]
-            fiche.definir_champs(cols_meta)
+            fiche.definir_champs(cols_meta, self._metadata)
 
             entite_temp = self._classe_entite()
             for col in cols_meta:

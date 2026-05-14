@@ -119,7 +119,9 @@ class clsEntity_ABS(clsDB_ABS):
         """
         from sysclasses.clsDBAManager import clsDBAManager
         engine = clsDBAManager().get_db(cls._DB_SYMBOLIC_NAME)
-        return engine.get_table_metadata(schema=cls._schema, table=cls._table)
+        meta   = engine.get_table_metadata(schema=cls._schema, table=cls._table)
+        meta.enrichir_ihm(cls._DB_SYMBOLIC_NAME)
+        return meta
 
     # --- CRUD ---
 
@@ -334,8 +336,10 @@ class clsEntity_ABS(clsDB_ABS):
     @property
     def TableMetadata(self) -> clsTableMetadata:
         if self._oltable_metadata is None:
-            self._oltable_metadata = self.ogEngine.get_table_metadata(
+            meta = self.ogEngine.get_table_metadata(
                 schema=self._schema,
                 table=self._table
             )
+            meta.enrichir_ihm(getattr(self, "_DB_SYMBOLIC_NAME", None))
+            self._oltable_metadata = meta
         return self._oltable_metadata

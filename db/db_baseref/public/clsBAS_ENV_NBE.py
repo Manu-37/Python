@@ -1,6 +1,7 @@
-from ..clsBaseRef import clsBaseRef
+from .clsPublic import clsPublic    
 
-class clsBAS_ENV_NBE(clsBaseRef):
+
+class clsBAS_ENV_NBE(clsPublic):
     # 1. IDENTITÉ
     _schema = "public"
     _table  = "t_bas_env_nbe"

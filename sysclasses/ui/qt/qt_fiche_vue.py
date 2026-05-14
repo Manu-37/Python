@@ -153,10 +153,11 @@ class QtFicheVue(QWidget):
     # Génération des champs depuis métadonnées
     # ------------------------------------------------------------------
 
-    def definir_champs(self, colonnes: list[dict]):
+    def definir_champs(self, colonnes: list[dict], metadata=None):
         """
         Génère les champs depuis la liste des métadonnées.
         Appelé une seule fois par le contrôleur à l'initialisation.
+        metadata : clsTableMetadata optionnel — active les libellés IHM enrichis.
         """
         while self._disposition_form.rowCount():
             self._disposition_form.removeRow(0)
@@ -170,7 +171,7 @@ class QtFicheVue(QWidget):
             est_pk       = col["is_pk"]
             est_fk       = col.get("is_fk", False)
             est_bool     = (col.get("canonical_type") or ("OTHER",))[0] == "BOOLEAN"
-            libelle      = self._libelle_colonne(col)
+            libelle      = self._libelle_colonne(col, metadata)
 
             if est_fk:
                 champ = QComboBox()
@@ -190,6 +191,12 @@ class QtFicheVue(QWidget):
                     else:
                         champ.setValidator(QDoubleValidator())
 
+            if metadata is not None:
+                largeur_car = metadata.get_col_largeur_car(nom)
+                if largeur_car is not None:
+                    largeur_px = self.fontMetrics().averageCharWidth() * largeur_car
+                    champ.setMaximumWidth(largeur_px)
+
             if est_identity or (est_pk and not est_fk):
                 if isinstance(champ, QLineEdit):
                     champ.setReadOnly(True)
@@ -199,7 +206,9 @@ class QtFicheVue(QWidget):
             self._disposition_form.addRow(f"{libelle} :", champ)
             self._champs[nom] = champ
 
-    def _libelle_colonne(self, col: dict) -> str:
+    def _libelle_colonne(self, col: dict, metadata=None) -> str:
+        if metadata is not None:
+            return metadata.get_col_label(col["name"])
         comment = col.get("comment") or ""
         if "|" in comment:
             return comment.split("|", 1)[0].strip()

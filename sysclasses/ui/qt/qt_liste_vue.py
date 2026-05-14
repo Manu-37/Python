@@ -97,9 +97,6 @@ class QtListeVue(QWidget):
         )
         self._tableau.setAlternatingRowColors(True)
         self._tableau.verticalHeader().setVisible(False)
-        self._tableau.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
         self._tableau.horizontalHeader().setStretchLastSection(True)
         self._tableau.itemSelectionChanged.connect(self._on_selection)
         self._tableau.doubleClicked.connect(lambda: self._on_modifier())
@@ -184,13 +181,15 @@ class QtListeVue(QWidget):
     # ------------------------------------------------------------------
 
     def charger(self, colonnes: list[str], libelles: list[str],
-                lignes: list[dict], lignes_data: list[dict] = None):
+                lignes: list[dict], lignes_data: list[dict] = None,
+                largeurs: list[int] = None):
         """
         Alimente le tableau sans reconstruire le widget.
 
         colonnes : noms techniques (clés du dict de données)
         libelles : labels d'affichage correspondants
         lignes   : données issues de load_all()
+        largeurs : largeurs en pixels par colonne (issues de get_col_width)
         """
         self._colonnes = colonnes
 
@@ -198,6 +197,14 @@ class QtListeVue(QWidget):
         self._tableau.setRowCount(0)
         self._tableau.setColumnCount(len(colonnes))
         self._tableau.setHorizontalHeaderLabels(libelles)
+
+        header = self._tableau.horizontalHeader()
+        if largeurs:
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            for i, larg in enumerate(largeurs):
+                self._tableau.setColumnWidth(i, larg)
+        else:
+            header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
         for numero_ligne, ligne in enumerate(lignes):
             donnee = lignes_data[numero_ligne] if lignes_data else ligne

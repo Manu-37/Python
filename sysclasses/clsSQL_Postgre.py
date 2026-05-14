@@ -84,7 +84,6 @@ class clsSQL_Postgre(clsDBA_SQL):
         """
         Retourne les métadonnées complètes d'une TABLE :
         colonnes, types, PK, FK, identity, comments.
-        Signature inchangée — aucune régression sur le code existant.
         """
         rows    = self.execute_select(self._sql_colonnes(), (schema, table))
         pk_set  = self._fetch_pk_set(schema, table)

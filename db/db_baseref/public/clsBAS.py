@@ -1,6 +1,6 @@
-from ..clsBaseRef import clsBaseRef
+from .clsPublic import clsPublic    
 
-class clsBAS(clsBaseRef):
+class clsBAS(clsPublic):
     # 1. IDENTITÉ
     _schema = "public"
     _table  = "t_base_bas"
