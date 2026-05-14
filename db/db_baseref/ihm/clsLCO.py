@@ -51,9 +51,9 @@ class clsLCO(clsIHM):
             erreurs.append("ERREUR : Le libellé court est obligatoire.")
             flag_error = True
 
-        if not self.lco_tooltip:
-            self.ogLog.error(f"LCO {self.col_id}/{self.lan_id} : L'info-bulle est obligatoire.")
-            erreurs.append("ERREUR : L'info-bulle est fortement conseillée.")
+        # if not self.lco_tooltip:
+        #     self.ogLog.error(f"LCO {self.col_id}/{self.lan_id} : L'info-bulle est obligatoire.")
+        #     erreurs.append("ERREUR : L'info-bulle est fortement conseillée.")
         return flag_error, "\n".join(erreurs)
 
     # 5. ACCÈS

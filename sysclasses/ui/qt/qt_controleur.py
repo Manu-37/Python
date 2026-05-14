@@ -334,12 +334,7 @@ class QtControleur(QWidget):
         ctrl_valeurs() est appelé par insert()/update() — transparent ici.
         """
         if mode == QtFicheVue.MODE_SUPPRESSION:
-            reponse = QMessageBox.question(
-                self, "Confirmation",
-                "Voulez-vous supprimer cet enregistrement ?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reponse != QMessageBox.StandardButton.Yes:
+            if not self._confirmer_suppression(entite):
                 return False
 
         try:
@@ -504,6 +499,19 @@ class QtControleur(QWidget):
         ex: fiche._btn_recuperer.setEnabled(mode != QtFicheVue.MODE_AJOUT)
         """
         pass
+
+    def _confirmer_suppression(self, entite) -> bool:
+        """
+        Retourne True si la suppression doit procéder.
+        Surcharger pour personnaliser le message ou bloquer selon le contexte
+        (ex : blocage si descendants, décompte cascade).
+        """
+        reponse = QMessageBox.question(
+            self, "Confirmation",
+            "Voulez-vous supprimer cet enregistrement ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        return reponse == QMessageBox.StandardButton.Yes
 
     def _avant_enregistrement(self, entite):
         """Avant insert/update/delete."""

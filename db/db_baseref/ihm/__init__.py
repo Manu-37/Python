@@ -13,3 +13,4 @@ from .clsLRE import clsLRE
 from .clsTAF import clsTAF
 from .clsCOL import clsCOL
 from .clsLCO import clsLCO
+from .clsDBR import clsDBR

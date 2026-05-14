@@ -10,12 +10,6 @@
 
 | N   | Tâche                                            | Priorité | Statut      |
 |-----|--------------------------------------------------|----------|-------------|
-| #3+#6 | Système i18n IHM — CDC établi               | Haute    | En cours    |
-| #16 | Exécution `create_ihm_schema.sql`                | Haute    | À faire     |
-| #17 | Entités Python schéma `ihm` (14 classes)         | Haute    | À faire     |
-| #18 | BaseRef_Manager — UIs gestion référentiel `ihm`  | Haute    | À faire     |
-| #19 | Outil d'introspection DB → alimentation `ihm`    | Haute    | À faire     |
-| #20 | UI saisie traductions + matrice couverture       | Haute    | À faire     |
 | #21 | Générateur JSON chiffré (artefact runtime)       | Haute    | À faire     |
 | #22 | `clsI18n` — singleton runtime + bootstrap        | Haute    | À faire     |
 | #23 | Intégration `clsI18n` → DataGrid, clsStTableView | Normale  | À faire     |
@@ -26,7 +20,7 @@
 | #8  | `t_lieu_liu` — lieux manuels                     | Basse    | Différé     |
 | #15 | Gestion des colonnes protégées                   | Basse    | Différé     |
 | #26 | BaseRef_Manager_2026 — Préférences taille police | Basse    | À faire     |
-| #4  | Politique rétention snapshots OneDrive           | Normale  | Terminé     |
+| #27 | Unicité `col_nom` par base — trigger PL/pgSQL    | Normale  | À faire     |
 
 ---
 
@@ -75,78 +69,7 @@
 
 ---
 
-## 🔄 En cours
-
-### #3+#6 — Système i18n IHM 🔴
-**Fusion des tâches #3 (référentiel multilingue) et #6 (refonte clsTableMetadata)**
-
-**CDC établi le 06/05/2026 — architecture validée :**
-
-Remplacement de tous les labels UI éparpillés (dicts `UI_*`, commentaires PostgreSQL, fallbacks hardcodés) par un référentiel centralisé multilingue. Stockage en base (`db_baseref`, schéma `ihm`), distribution sous forme de JSON chiffré par applicatif (via `clsCrypto`), résolution au runtime par un singleton `clsI18n`.
-
-**Architecture :**
-```
-DB ihm (authoring)  →  [génération manuelle]  →  JSON chiffré par app+langue
-                                                         ↓
-                                                   clsI18n (singleton)
-                                                         ↓
-                                              UI (CTK, Streamlit, futur)
-```
-
-**Schéma `ihm` — 14 tables validées :**
-
-| Table | Triplet | Rôle |
-|---|---|---|
-| `t_langue_lan` | `lan` | Langues supportées |
-| `t_application_app` | `app` | Applications + entrée `GLOBAL` |
-| `t_app_lan_nal` | `nal` | Liaison App ↔ Langue + langue défaut |
-| `t_type_element_tel` | `tel` | Types d'éléments UI |
-| `t_element_ele` | `ele` | Éléments UI nommés |
-| `t_libelle_element_lel` | `lel` | Traductions des éléments UI |
-| `t_db_db` | `db` | Bases logiques (racine hiérarchie DB) |
-| `t_schema_sch` | `sch` | Schémas PostgreSQL |
-| `t_type_relation_tre` | `tre` | Types de relation (TABLE/VIEW/MVIEW) |
-| `t_relation_rel` | `rel` | Tables / Vues / Vues matérialisées |
-| `t_libelle_relation_lre` | `lre` | Traductions des relations |
-| `t_type_affichage_taf` | `taf` | Types d'affichage colonnes |
-| `t_colonne_col` | `col` | Colonnes de relation |
-| `t_libelle_colonne_lco` | `lco` | Traductions des colonnes |
-
-**Scripts SQL :** `db/db_baseref/sql/create_ihm_schema.sql` + `drop_ihm_schema.sql`
-
-**Périmètre V1 :** colonnes DB, libellés relations, éléments UI (boutons/onglets/titres/sections) — fr actif, en structuré — BaseRef_Manager prioritaire, tstat_analyse ensuite
-
-**Hors périmètre V1 :** messages d'erreur, logs, libellés schémas, bascule langue à chaud, versioning historique
-
-**Sous-tâches ordonnées :** #16 → #17 → #18+#19 → #20 → #21 → #22 → #23 → #24
-
----
-
 ## 📋 À faire
-
-### #16 — Exécution `create_ihm_schema.sql` 🔴
-**Scope :** Exécuter le script sur `db_baseref`, vérifier le trigger `fn_audit_ihm()` sur un INSERT test, confirmer les droits `r_crud` et `r_backup`.
-**Responsable :** Emmanuel
-
-### #17 — Entités Python schéma `ihm` 🔴
-**Scope :** 14 classes dans `db/db_baseref/ihm/` suivant le pattern existant (`clsEntity_ABS`, triplets, getters/setters, `ctrl_valeurs`). Inclut `clsIHM` comme ancre de base (`_DB_SYMBOLIC_NAME = "BASEREF"`).
-**Responsable :** Claude
-**Dépend de :** #16
-
-### #18 — BaseRef_Manager — UIs gestion référentiel `ihm` 🔴
-**Scope :** Interfaces CRUD pour les tables de référence du schéma `ihm` (langues, applications, types, éléments). Discussion préalable sur la présentation générale et la navigation dans une interface qui s'enrichit.
-**Responsable :** Claude (avec discussion UI préalable)
-**Dépend de :** #17
-
-### #19 — Outil d'introspection DB → alimentation `ihm` 🔴
-**Scope :** Lit `pg_catalog` (schemas, tables, vues, colonnes) et alimente automatiquement `t_db_db`, `t_schema_sch`, `t_relation_rel`, `t_colonne_col`. **CDC détaillé obligatoire avant démarrage** — périmètre des bases couvertes, gestion des suppressions/renommages, déclenchement.
-**Responsable :** Emmanuel (avec aide Claude)
-**Dépend de :** #17
-
-### #20 — UI saisie traductions + matrice de couverture 🔴
-**Scope :** Interface de saisie des libellés par élément et par langue. Matrice de couverture ("X clés manquent en japonais"). Baptême du feu du nouveau framework UI.
-**Responsable :** Emmanuel
-**Dépend de :** #18, #19
 
 ### #21 — Générateur JSON chiffré 🔴
 **Scope :** Extraction DB → JSON structuré par app+langue → chiffrement Fernet (`clsCrypto`). **CDC détaillé obligatoire** — format JSON, nommage des fichiers, localisation, déclenchement.
@@ -176,6 +99,18 @@ DB ihm (authoring)  →  [génération manuelle]  →  JSON chiffré par app+lan
 ### #14 — Copie de fiche dans Entity_ListView 🟡
 **Scope :** Ajout d'un bouton "Copier" optionnel dans la toolbar (`show_copy_button: bool = False`). Ouvre le formulaire en mode INSERT pré-rempli avec les valeurs de la ligne sélectionnée. PKs identity remises à `None` automatiquement ; PKs manuelles, colonnes chiffrées et FKs conservées telles quelles.
 
+### #27 — Unicité `col_nom` par base de données — trigger PL/pgSQL 🟡
+**Contexte :** Dans le référentiel IHM, un nom de colonne doit être unique au sein d'une base de données. Cette unicité ne peut pas être garantie par une contrainte SQL standard : `col_nom` est dans `t_colonne_col` et `db_id` est trois niveaux au-dessus via REL → SCH → DB. Une MV indexée a été écartée — pas assez réactive.
+
+**Solution retenue :** Trigger `BEFORE INSERT OR UPDATE` sur `t_colonne_col` appelant une fonction PL/pgSQL qui vérifie l'unicité par remontée de la hiérarchie. Le trigger doit couvrir les modifications de `col_nom` **ET** de `rel_id` — un déplacement de colonne vers une autre relation doit déclencher la vérification.
+
+**Point critique sysclasses :** Le `RAISE EXCEPTION` PostgreSQL remonte en `psycopg2.errors.RaiseException`. Cette exception doit être interceptée dans `clsSQL_Postgre` et traduite en message utilisateur exploitable — même traitement que les autres violations de contraintes. Ne pas laisser remonter l'exception brute jusqu'à l'IHM.
+
+**Livrable :** Fonction PL/pgSQL + trigger dans le DDL du schéma `ihm` (`create_ihm_schema.sql`). Mise à jour de `clsSQL_Postgre` pour l'interception.
+
+**Responsable :** Claude (SQL + Python)
+**Dépend de :** #16
+
 ---
 
 ## ⏸️ Différé
@@ -197,6 +132,30 @@ DB ihm (authoring)  →  [génération manuelle]  →  JSON chiffré par app+lan
 ---
 
 ## ✅ Terminé
+
+### #3+#6 — Système i18n IHM — CDC + architecture
+**Clôturé le 13/05/2026**
+Fusion des tâches #3 (référentiel multilingue) et #6 (refonte `clsTableMetadata`). CDC établi le 06/05/2026 — architecture validée : stockage en base (`db_baseref`, schéma `ihm`), distribution JSON chiffré par app+langue (`clsCrypto`), résolution runtime par singleton `clsI18n`. Schéma `ihm` : 14 tables validées (langues, applications, liaisons, types éléments, éléments UI, libellés, hiérarchie DB/SCH/REL/COL). Périmètre V1 établi. Sous-tâches ordonnées : #16 → #17 → #18+#19 → #20 → #21 → #22 → #23 → #24.
+
+### #16 — Exécution `create_ihm_schema.sql`
+**Clôturé le 13/05/2026**
+Script exécuté sur `db_baseref`. Trigger `fn_audit_ihm()` validé sur INSERT test. Droits `r_crud` et `r_backup` confirmés.
+
+### #17 — Entités Python schéma `ihm` (14 classes)
+**Clôturé le 13/05/2026**
+14 classes créées dans `db/db_baseref/ihm/` suivant le pattern `clsEntity_ABS` (triplets, getters/setters, `ctrl_valeurs`). `clsIHM` comme ancre de base (`_DB_SYMBOLIC_NAME = "BASEREF"`).
+
+### #18 — BaseRef_Manager — UIs gestion référentiel `ihm`
+**Clôturé le 13/05/2026**
+Interfaces CRUD pour les tables de référence du schéma `ihm` (langues, applications, types, éléments) dans `BaseRef_Manager_2026`.
+
+### #19 — Outil d'introspection DB → alimentation `ihm`
+**Clôturé le 13/05/2026**
+Lecture `pg_catalog` (schémas, tables, vues, colonnes) et alimentation automatique de `t_db_db`, `t_schema_sch`, `t_relation_rel`, `t_colonne_col`.
+
+### #20 — UI saisie traductions + matrice de couverture
+**Clôturé le 13/05/2026**
+Interface de saisie des libellés par élément et par langue. Matrice de couverture ("X clés manquent en langue Y").
 
 ### #4 — Politique de rétention des sauvegardes OneDrive
 **Clôturé le 05/05/2026**
@@ -317,6 +276,12 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO r_backup;
 | #10 | Suivi pg_cron                                 | Base postgres + entités RO + UI double datagrid + améliorations FWK          |
 | #12 | Sauvegarde `db_tstat_data`                   | Droits SELECT séquences manquants sur `r_backup` — corrigé 03/05/2026        |
 | #13 | Diagnostic échec jobs pg_cron                | pg_cron → TCP IPv6 (::1) sans règle trust — 3 règles pg_hba.conf ajoutées — corrigé 05/05/2026 |
+| #3+#6 | Système i18n IHM — CDC + architecture      | CDC établi 06/05/2026 — 14 tables schéma `ihm`, architecture JSON chiffré + `clsI18n`, périmètre V1 validé — 13/05/2026 |
+| #16 | Exécution `create_ihm_schema.sql`            | Script exécuté sur `db_baseref`, trigger audit validé, droits `r_crud`/`r_backup` confirmés — 13/05/2026 |
+| #17 | Entités Python schéma `ihm` (14 classes)     | 14 classes `db/db_baseref/ihm/` + `clsIHM` ancre de base — 13/05/2026 |
+| #18 | BaseRef_Manager — UIs gestion référentiel `ihm` | CRUD langues, applications, types, éléments dans BaseRef_Manager_2026 — 13/05/2026 |
+| #19 | Outil d'introspection DB → alimentation `ihm` | Lecture `pg_catalog` → alimentation automatique 4 tables `ihm` — 13/05/2026 |
+| #20 | UI saisie traductions + matrice couverture   | Interface saisie libellés + matrice couverture par langue — 13/05/2026 |
 
 ---
 

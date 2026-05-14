@@ -103,7 +103,7 @@ class clsSQL_Postgre(clsDBA_SQL):
 
     def get_view_metadata(self, schema: str, view: str) -> clsTableMetadata:
         """
-        Retourne les métadonnées d'une VUE ou VUE MATÉRIALISÉE :
+        Retourne les métadonnées d'une VUE :
         colonnes, types, comments.
         Pas de PK ni FK — non pertinents sur une vue.
         """
@@ -112,13 +112,97 @@ class clsSQL_Postgre(clsDBA_SQL):
 
         canonical_rows = self._build_metadata_columns(
             rows    = rows,
-            pk_set  = set(),    # vide — pas de PK sur une vue
-            fk_map  = {},       # vide — pas de FK sur une vue
+            pk_set  = set(),
+            fk_map  = {},
             com_map = com_map,
         )
 
         self._log.debug(f"get_view_metadata | {schema}.{view} — {len(canonical_rows)} colonnes")
         return clsTableMetadata(view, canonical_rows)
+
+    def get_mview_metadata(self, schema: str, mview: str) -> clsTableMetadata:
+        """
+        Retourne les métadonnées d'une VUE MATÉRIALISÉE via pg_catalog.
+        information_schema.columns n'indexe pas les MV — on passe par pg_attribute.
+        format_type(atttypid, -1) retourne le type de base sans modificateur
+        (ex. 'character varying', 'integer') — compatible avec _TYPE_MAPPING.
+        """
+        sql = """
+            SELECT
+                a.attname                             AS column_name,
+                format_type(a.atttypid, -1)           AS data_type,
+                NULL::integer                         AS character_maximum_length,
+                NULL::integer                         AS numeric_precision,
+                NULL::integer                         AS numeric_scale,
+                CASE a.attnotnull WHEN TRUE THEN 'NO' ELSE 'YES' END AS is_nullable,
+                NULL::text                            AS column_default,
+                'NO'                                  AS is_identity,
+                NULL::text                            AS identity_generation,
+                a.attnum                              AS ordinal_position
+            FROM pg_attribute a
+            JOIN pg_class     c ON c.oid = a.attrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname  = %s
+              AND c.relname  = %s
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            ORDER BY a.attnum
+        """
+        rows    = self.execute_select(sql, (schema, mview))
+        com_map = self._fetch_comment_map(schema, mview)
+
+        canonical_rows = self._build_metadata_columns(
+            rows    = rows,
+            pk_set  = set(),
+            fk_map  = {},
+            com_map = com_map,
+        )
+
+        self._log.debug(f"get_mview_metadata | {schema}.{mview} — {len(canonical_rows)} colonnes")
+        return clsTableMetadata(mview, canonical_rows)
+
+    def list_schemas(self) -> list[str]:
+        """
+        Retourne les noms des schémas visibles, hors schémas système PostgreSQL.
+        Utilise pg_namespace pour contourner les restrictions d'information_schema.
+        """
+        sql = """
+            SELECT nspname AS schema_nom
+            FROM pg_namespace
+            WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+              AND nspname NOT LIKE 'pg_%%'
+            ORDER BY nspname
+        """
+        rows = self.execute_select(sql, ())
+        schemas = [r["schema_nom"] for r in rows]
+        self._log.debug(f"list_schemas | {len(schemas)} schéma(s) trouvé(s)")
+        return schemas
+
+    def list_relations(self, schema: str) -> list[dict]:
+        """
+        Retourne les relations (tables, vues, vues matérialisées) d'un schéma.
+        Chaque élément : {"rel_nom": str, "rel_type": "TABLE"|"VIEW"|"MVIEW"}.
+        """
+        sql = """
+            SELECT table_name AS rel_nom,
+                   CASE table_type
+                       WHEN 'BASE TABLE' THEN 'TABLE'
+                       WHEN 'VIEW'       THEN 'VIEW'
+                   END AS rel_type
+            FROM information_schema.tables
+            WHERE table_schema = %s
+              AND table_type IN ('BASE TABLE', 'VIEW')
+            UNION ALL
+            SELECT matviewname AS rel_nom,
+                   'MVIEW'     AS rel_type
+            FROM pg_matviews
+            WHERE schemaname = %s
+            ORDER BY rel_nom
+        """
+        rows = self.execute_select(sql, (schema, schema))
+        relations = [{"rel_nom": r["rel_nom"], "rel_type": r["rel_type"]} for r in rows]
+        self._log.debug(f"list_relations | {schema} — {len(relations)} relation(s)")
+        return relations
 
     # =========================================================================
     # Métadonnées — méthodes privées

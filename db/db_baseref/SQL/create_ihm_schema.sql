@@ -96,13 +96,17 @@ CREATE TRIGGER trg_audit_tel
 -- ────────────────────────────────────────────────────
 CREATE TABLE ihm.t_db_db (
     db_id          BIGSERIAL    NOT NULL,
+    env_id         BIGINT,
+    bas_id         BIGINT,
     db_code        VARCHAR(32)  NOT NULL,
     db_nom         VARCHAR(128) NOT NULL,
     db_description VARCHAR(512),
     db_cree_le     TIMESTAMPTZ  NOT NULL,
     db_modifie_le  TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_db      PRIMARY KEY (db_id),
-    CONSTRAINT uq_db_code UNIQUE (db_code)
+    CONSTRAINT uq_db_code UNIQUE (db_code),
+    CONSTRAINT fk_db_env  FOREIGN KEY (env_id) REFERENCES public.t_environnement_env (env_id) ON DELETE SET NULL,
+    CONSTRAINT fk_db_bas  FOREIGN KEY (bas_id) REFERENCES public.t_base_bas          (bas_id) ON DELETE SET NULL
 );
 CREATE TRIGGER trg_audit_db
     BEFORE INSERT OR UPDATE ON ihm.t_db_db
@@ -164,6 +168,7 @@ CREATE TABLE ihm.t_schema_sch (
     sch_id         BIGSERIAL    NOT NULL,
     db_id          BIGINT       NOT NULL,
     sch_nom        VARCHAR(128) NOT NULL,
+    sch_actif      BOOLEAN      NOT NULL DEFAULT TRUE,
     sch_cree_le    TIMESTAMPTZ  NOT NULL,
     sch_modifie_le TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_sch    PRIMARY KEY (sch_id),
@@ -202,10 +207,11 @@ CREATE TABLE ihm.t_relation_rel (
     sch_id         BIGINT       NOT NULL,
     tre_id         BIGINT       NOT NULL,
     rel_nom        VARCHAR(128) NOT NULL,
+    rel_actif      BOOLEAN      NOT NULL DEFAULT TRUE,
     rel_cree_le    TIMESTAMPTZ  NOT NULL,
     rel_modifie_le TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_rel     PRIMARY KEY (rel_id),
-    CONSTRAINT fk_rel_sch FOREIGN KEY (sch_id) REFERENCES ihm.t_schema_sch       (sch_id),
+    CONSTRAINT fk_rel_sch FOREIGN KEY (sch_id) REFERENCES ihm.t_schema_sch       (sch_id) ON DELETE CASCADE,
     CONSTRAINT fk_rel_tre FOREIGN KEY (tre_id) REFERENCES ihm.t_type_relation_tre (tre_id),
     CONSTRAINT uq_rel     UNIQUE (sch_id, rel_nom)
 );
@@ -258,10 +264,11 @@ CREATE TABLE ihm.t_colonne_col (
     taf_id         BIGINT       NOT NULL,
     col_nom        VARCHAR(128) NOT NULL,
     col_largeur    INTEGER,
+    col_actif      BOOLEAN      NOT NULL DEFAULT TRUE,
     col_cree_le    TIMESTAMPTZ  NOT NULL,
     col_modifie_le TIMESTAMPTZ  NOT NULL,
     CONSTRAINT pk_col     PRIMARY KEY (col_id),
-    CONSTRAINT fk_col_rel FOREIGN KEY (rel_id) REFERENCES ihm.t_relation_rel      (rel_id),
+    CONSTRAINT fk_col_rel FOREIGN KEY (rel_id) REFERENCES ihm.t_relation_rel      (rel_id) ON DELETE CASCADE,
     CONSTRAINT fk_col_taf FOREIGN KEY (taf_id) REFERENCES ihm.t_type_affichage_taf (taf_id),
     CONSTRAINT uq_col     UNIQUE (rel_id, col_nom)
 );
@@ -286,6 +293,23 @@ CREATE TABLE ihm.t_libelle_colonne_lco (
 );
 CREATE TRIGGER trg_audit_lco
     BEFORE INSERT OR UPDATE ON ihm.t_libelle_colonne_lco
+    FOR EACH ROW EXECUTE FUNCTION ihm.fn_audit_ihm();
+
+-- ────────────────────────────────────────────────────
+-- t_db_rapport_dbr
+-- ────────────────────────────────────────────────────
+CREATE TABLE ihm.t_db_rapport_dbr (
+    dbr_id         BIGSERIAL   NOT NULL,
+    db_id          BIGINT      NOT NULL,
+    dbr_date       TIMESTAMPTZ NOT NULL,
+    dbr_json       JSONB       NOT NULL,
+    dbr_cree_le    TIMESTAMPTZ NOT NULL,
+    dbr_modifie_le TIMESTAMPTZ NOT NULL,
+    CONSTRAINT pk_dbr    PRIMARY KEY (dbr_id),
+    CONSTRAINT fk_dbr_db FOREIGN KEY (db_id) REFERENCES ihm.t_db_db (db_id) ON DELETE CASCADE
+);
+CREATE TRIGGER trg_audit_dbr
+    BEFORE INSERT OR UPDATE ON ihm.t_db_rapport_dbr
     FOR EACH ROW EXECUTE FUNCTION ihm.fn_audit_ihm();
 
 -- ================================================================

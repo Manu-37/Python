@@ -9,6 +9,7 @@ class clsSCH(clsIHM):
     SCH_ID         = "sch_id"
     DB_ID          = "db_id"
     SCH_NOM        = "sch_nom"
+    SCH_ACTIF      = "sch_actif"
     SCH_CREE_LE    = "sch_cree_le"
     SCH_MODIFIE_LE = "sch_modifie_le"
 
@@ -65,6 +66,14 @@ class clsSCH(clsIHM):
     @sch_nom.setter
     def sch_nom(self, valeur: str):
         self.set_natural(self.SCH_NOM, valeur)
+
+    @property
+    def sch_actif(self) -> bool:
+        return self.get_natural(self.SCH_ACTIF)
+
+    @sch_actif.setter
+    def sch_actif(self, valeur: bool):
+        self.set_natural(self.SCH_ACTIF, valeur)
 
     @property
     def sch_cree_le(self):

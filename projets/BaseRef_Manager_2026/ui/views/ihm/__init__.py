@@ -8,3 +8,4 @@ from .rel_controleur import RELControleur
 from .col_controleur import COLControleur
 from .lre_controleur import LREControleur
 from .lco_controleur import LCOControleur
+from .ihm_maintenance_vue import IhmMaintenanceVue

@@ -11,6 +11,7 @@ class clsCOL(clsIHM):
     TAF_ID         = "taf_id"
     COL_NOM        = "col_nom"
     COL_LARGEUR    = "col_largeur"
+    COL_ACTIF      = "col_actif"
     COL_CREE_LE    = "col_cree_le"
     COL_MODIFIE_LE = "col_modifie_le"
 
@@ -90,6 +91,14 @@ class clsCOL(clsIHM):
     @col_largeur.setter
     def col_largeur(self, valeur: int):
         self.set_natural(self.COL_LARGEUR, valeur)
+
+    @property
+    def col_actif(self) -> bool:
+        return self.get_natural(self.COL_ACTIF)
+
+    @col_actif.setter
+    def col_actif(self, valeur: bool):
+        self.set_natural(self.COL_ACTIF, valeur)
 
     @property
     def col_cree_le(self):

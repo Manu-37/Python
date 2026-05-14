@@ -48,25 +48,25 @@ DEFINITION_MENU = [
         ("i18n", "Internationalisation des projets", [
             ("projets",    "Projets",[
                     ("app", "Projets",          None,             True),
-                    ("nal", "langues projet",   None,             True),
-            ]),
-            ("ihm",        "IHM",[
-                    ("ele", "Element IHM",      None,             True),
-                    ("lel", "langues IHM",      None,             True),
+            #         ("nal", "langues projet",   None,             True),
+            # ]),
+            # ("ihm",        "IHM",[
+            #         ("ele", "Element IHM",      None,             True),
+            #         ("lel", "langues IHM",      None,             True),
 
             ]),
         ]),
         ("i18ndb",        "Data Bases", [
             ("db",   "Bases de données",            DBControleur,             False),  
-            ("sch", "Schémas",                      SCHControleur,             True),
-            ("relations", "Tables, vues, etc.",[
-                    ("rel", "Relations",            RELControleur,             True),
-                    ("lre", "Libelles relations",   LREControleur,             True),
-            ]),
-            ("colonnes", "Colonnes", [
-                    ("col", "Colonnes",             COLControleur,             True),
-                    ("lco", "Libelles colonnes",    LCOControleur,             True),
-            ]),
+            # ("sch", "Schémas",                      SCHControleur,             True),
+            # ("relations", "Tables, vues, etc.",[
+            #         ("rel", "Relations",            RELControleur,             True),
+            #         ("lre", "Libelles relations",   LREControleur,             True),
+            # ]),
+            # ("colonnes", "Colonnes", [
+            #         ("col", "Colonnes",             COLControleur,             True),
+            #         ("lco", "Libelles colonnes",    LCOControleur,             True),
+            # ]),
         ]),
         ("references", "Tables de référence",[
              ("lan",        "Langues",                  LANControleur,             True),
@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
 
     def _construire_fenetre(self):
         self.setWindowTitle("BaseRef Manager 2026")
-        self.resize(1280, 960)
+        self.resize(2560, 1440)
         self.setMinimumSize(1024, 768)
 
     def _construire_menu(self):

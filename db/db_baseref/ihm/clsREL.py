@@ -10,6 +10,7 @@ class clsREL(clsIHM):
     SCH_ID         = "sch_id"
     TRE_ID         = "tre_id"
     REL_NOM        = "rel_nom"
+    REL_ACTIF      = "rel_actif"
     REL_CREE_LE    = "rel_cree_le"
     REL_MODIFIE_LE = "rel_modifie_le"
 
@@ -82,6 +83,14 @@ class clsREL(clsIHM):
     @rel_nom.setter
     def rel_nom(self, valeur: str):
         self.set_natural(self.REL_NOM, valeur)
+
+    @property
+    def rel_actif(self) -> bool:
+        return self.get_natural(self.REL_ACTIF)
+
+    @rel_actif.setter
+    def rel_actif(self, valeur: bool):
+        self.set_natural(self.REL_ACTIF, valeur)
 
     @property
     def rel_cree_le(self):

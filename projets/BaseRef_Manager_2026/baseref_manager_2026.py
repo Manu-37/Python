@@ -11,7 +11,7 @@ if str(python_dir) not in sys.path:
 
 # --- Constantes projet ---
 PROJET_NOM = "BaseRef_Manager_2026"
-PROJET_VER = "0.1.0"
+PROJET_VER = "0.2.0"
 
 # --- Chemins ---
 from sysclasses.cste_chemins import init_chemins, get_app_dir
